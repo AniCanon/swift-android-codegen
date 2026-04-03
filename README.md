@@ -61,13 +61,22 @@ let package = Package(
 
 ### 2. Apply the Gradle plugin
 
-In your Android project's `settings.gradle.kts`:
+Publish to your local Maven repository:
+
+```bash
+cd swift-android-codegen
+./gradlew publishToMavenLocal
+```
+
+Add `mavenLocal()` to your `settings.gradle.kts` plugin repositories:
 
 ```kotlin
 pluginManagement {
-    val swiftAndroidCodegenDir = settingsDir.resolve("../swift-android-codegen").normalize()
-    if (swiftAndroidCodegenDir.exists()) {
-        includeBuild(swiftAndroidCodegenDir)
+    repositories {
+        mavenLocal()
+        google()
+        mavenCentral()
+        gradlePluginPortal()
     }
 }
 ```
@@ -76,7 +85,7 @@ In your `app/build.gradle.kts`:
 
 ```kotlin
 plugins {
-    id("dev.anicanon.swift-android-codegen")
+    id("dev.anicanon.swift-android-codegen") version "0.2.0"
 }
 
 // Generated sources are committed — not ephemeral build output
