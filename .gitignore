@@ -5,9 +5,11 @@ build/
 local.properties
 
 # Swift
+.build/
 swift-macro/.build/
 swift-macro/.swiftpm/
 swift-macro/Package.resolved
+Package.resolved
 
 # IDE
 .idea/

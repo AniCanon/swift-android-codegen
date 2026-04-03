@@ -26,9 +26,9 @@ val result = bridge.fetch()
 ## How it works
 
 1. You annotate Swift types with `@AndroidBridge("BridgeName")`
-2. At build time, the Gradle plugin invokes the `bridge-gen` CLI
+2. You run `./gradlew generateSwiftAndroidBridges` to invoke the `bridge-gen` CLI
 3. The CLI parses your Swift source with swift-syntax and generates Kotlin files
-4. Generated bridges wrap each public async method as a Kotlin `suspend fun`
+4. Generated bridges are committed to source control and compiled with normal builds
 
 ```
 Swift source ──→ swift-syntax AST ──→ BridgeDescriptor ──→ Kotlin source
@@ -79,28 +79,39 @@ plugins {
     id("dev.anicanon.swift-android-codegen")
 }
 
-val bridgeOutputDir = layout.buildDirectory.dir("generated/source/swiftAndroidCodegen/main/kotlin")
+// Generated sources are committed — not ephemeral build output
+val swiftAndroidBridgesDir = file("src/generated/bridges")
 
 swiftAndroidCodegen {
     bridgeGenDir.set(rootDir.resolve("../swift-android-codegen/swift-macro").normalize())
     swiftSourceDir.set(file("../Shared/Sources/MySharedCode"))
-    outputDir.set(bridgeOutputDir)
+    outputDir.set(swiftAndroidBridgesDir)
     bridgePackage.set("com.example.bridge.generated")
     sourcePackage.set("com.example.shared")
 }
 
 android {
     sourceSets {
-        getByName("main").kotlin.srcDir(bridgeOutputDir)
+        getByName("main").kotlin.srcDir(swiftAndroidBridgesDir)
     }
 }
 ```
 
-### 3. Add the runtime dependency
+### 3. Generate bridges
+
+Run the codegen task after changing Swift `@AndroidBridge` annotations or public API:
+
+```bash
+./gradlew generateSwiftAndroidBridges
+```
+
+Generated Kotlin files are written to `src/generated/bridges/` and committed to version control. Normal builds compile from the committed sources — no codegen runs during `assembleDebug`.
+
+### 4. Add the runtime dependency
 
 ```kotlin
 dependencies {
-    implementation("dev.anicanon.swiftandroid.codegen:runtime:0.1.0-SNAPSHOT")
+    implementation("dev.anicanon.swiftandroid.codegen:runtime:0.2.0")
 }
 ```
 
@@ -144,12 +155,13 @@ class ProjectListBridge(
 
     suspend fun fetch(): ProjectListOverview =
         withContext(Dispatchers.IO) {
-            impl.fetch(arena).await()
+            impl.fetch(arena)
+                .await()
         }
 }
 ```
 
-The bridge mirrors the Swift type's constructor — same parameters, same names. The Swift instance is created once and reused across all method calls. You provide the dependencies; the bridge handles the rest.
+The bridge mirrors the Swift type's constructor — same parameters, same names. The Swift instance and arena are created once and reused across all method calls. The auto arena ensures Swift objects stay alive as long as the bridge is reachable from Kotlin. You provide the dependencies; the bridge handles the rest.
 
 ### Use from Android
 
@@ -197,7 +209,7 @@ Types without `@AndroidBridge` are ignored. The `@AndroidBridge` macro itself is
 
 ## CLI usage
 
-The Gradle plugin invokes this automatically, but you can run it directly:
+You can also run the CLI directly without Gradle:
 
 ```bash
 cd swift-macro
@@ -235,7 +247,7 @@ swift-android-codegen/
 
 ### Bridges hide `SwiftArena`
 
-This is intentional. `SwiftArena` is a swift-java memory lifecycle detail — it shouldn't leak into your Kotlin API. Each bridge creates a single `SwiftArena.ofAuto()` and Swift instance at construction time, reused across all method calls. Cleanup is handled by the JVM garbage collector. Your code never touches arenas.
+This is intentional. `SwiftArena` is a swift-java memory lifecycle detail — it shouldn't leak into your Kotlin API. Each bridge creates a single `SwiftArena.ofAuto()` and Swift instance at construction time, reused across all method calls. The auto arena ties Swift object lifetimes to Java GC reachability — as long as the bridge is referenced from Kotlin, its Swift objects stay alive. Your code never touches arenas.
 
 ### No auth or factory injection
 
