@@ -235,6 +235,72 @@ class ProjectListBridge(
         #expect(output == expected)
     }
 
+    @Test("Omits arena for String array returns (no arena accessor overload exists)")
+    func stringArrayReturnHasNoArena() {
+        let emitter = KotlinBridgeEmitter(config: config)
+        let bridge = BridgeDescriptor(
+            bridgeName: "RefsBridge",
+            swiftTypeName: "DefaultRefsUseCase",
+            initParams: [],
+            methods: [
+                .init(
+                    name: "listReferenceImages",
+                    params: [.init(name: "outfitId", swiftType: .simple("String"))],
+                    returnType: .init(swiftType: .array(.simple("String")), isVoid: false)
+                ),
+            ]
+        )
+
+        let output = emitter.emit(bridge)
+
+        #expect(output.contains("impl.listReferenceImages(outfitId)"))
+        #expect(!output.contains("impl.listReferenceImages(outfitId, arena)"))
+        #expect(output.contains(".toList()"))
+    }
+
+    @Test("Omits arena for scalar String return")
+    func stringReturnHasNoArena() {
+        let emitter = KotlinBridgeEmitter(config: config)
+        let bridge = BridgeDescriptor(
+            bridgeName: "NameBridge",
+            swiftTypeName: "DefaultNameUseCase",
+            initParams: [],
+            methods: [
+                .init(
+                    name: "name",
+                    params: [.init(name: "id", swiftType: .simple("String"))],
+                    returnType: .init(swiftType: .simple("String"), isVoid: false)
+                ),
+            ]
+        )
+
+        let output = emitter.emit(bridge)
+
+        #expect(output.contains("impl.name(id)"))
+        #expect(!output.contains("impl.name(id, arena)"))
+    }
+
+    @Test("Keeps arena for object array returns")
+    func objectArrayReturnKeepsArena() {
+        let emitter = KotlinBridgeEmitter(config: config)
+        let bridge = BridgeDescriptor(
+            bridgeName: "OutfitsBridge",
+            swiftTypeName: "DefaultOutfitsUseCase",
+            initParams: [],
+            methods: [
+                .init(
+                    name: "listOutfits",
+                    params: [.init(name: "characterId", swiftType: .simple("String"))],
+                    returnType: .init(swiftType: .array(.simple("Outfit")), isVoid: false)
+                ),
+            ]
+        )
+
+        let output = emitter.emit(bridge)
+
+        #expect(output.contains("impl.listOutfits(characterId, arena)"))
+    }
+
     @Test("Emits optional types with ? in Kotlin")
     func optionalTypes() {
         let emitter = KotlinBridgeEmitter(config: config)
