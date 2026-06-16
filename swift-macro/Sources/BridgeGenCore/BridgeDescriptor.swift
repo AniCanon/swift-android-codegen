@@ -75,6 +75,21 @@ public indirect enum SwiftType: Sendable {
         return false
     }
 
+    /// Whether a returned value of this type wraps a Swift object that must be
+    /// registered in a `SwiftArena`. The swift-java accessors only expose a
+    /// `SwiftArena` overload for such returns; primitives and `String` (and
+    /// arrays/optionals of them) are value-copied and have no arena overload, so
+    /// the bridge must not pass an arena for them.
+    public var wrapsSwiftObjectWhenReturned: Bool {
+        switch self {
+        case .simple(let name): !Self.primitiveTypes.contains(name)
+        case .member: true
+        case .optional(let inner): inner.wrapsSwiftObjectWhenReturned
+        case .array(let element): element.wrapsSwiftObjectWhenReturned
+        case .data: true
+        }
+    }
+
     public var kotlinType: String {
         switch self {
         case .simple(let name): mapPrimitive(name)

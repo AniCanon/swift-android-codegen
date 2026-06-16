@@ -150,7 +150,9 @@ public struct KotlinBridgeEmitter {
                 return param.name
             }
         }
-        if !method.returnType.isVoid {
+        // Only object-wrapping returns have a SwiftArena accessor overload; passing
+        // an arena for String/primitive (and arrays of them) returns would not resolve.
+        if !method.returnType.isVoid && method.returnType.swiftType.wrapsSwiftObjectWhenReturned {
             args.append("arena")
         }
 
