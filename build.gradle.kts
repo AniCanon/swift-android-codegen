@@ -8,6 +8,24 @@ allprojects {
         mavenCentral()
         google()
         gradlePluginPortal()
+        // AniCanon's vendored copy of Apple swift-java's swiftkit jars (frozen
+        // at swiftlang/swift-java @ 0bdba49). Apple does not publish these to
+        // Maven Central yet, so we host the pinned build here rather than
+        // require every consumer to build swift-java and publishToMavenLocal.
+        // Scoped to the swiftkit group so it is only queried for that dependency.
+        val gprUser = (findProperty("gpr.user") as String?) ?: System.getenv("GITHUB_ACTOR")
+        val gprKey = (findProperty("gpr.key") as String?) ?: System.getenv("GITHUB_TOKEN")
+        if (gprUser != null && gprKey != null) {
+            maven {
+                name = "AniCanonPackages"
+                url = uri("https://maven.pkg.github.com/AniCanon/swift-android-codegen")
+                credentials {
+                    username = gprUser
+                    password = gprKey
+                }
+                content { includeGroup("org.swift.swiftkit") }
+            }
+        }
     }
 }
 

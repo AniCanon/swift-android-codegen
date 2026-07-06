@@ -22,5 +22,8 @@ repositories {
 
 dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.1")
-    compileOnly("org.swift.swiftkit:swiftkit-core:1.0-SNAPSHOT")
+    // Pinned vendored build of Apple swift-java's swiftkit (see repositories
+    // block in the root build) — replaces the per-developer 1.0-SNAPSHOT
+    // publishToMavenLocal bootstrap so fresh clones and CI resolve it.
+    compileOnly("org.swift.swiftkit:swiftkit-core:1.0-0bdba49")
 }
