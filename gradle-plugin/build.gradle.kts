@@ -32,5 +32,24 @@ afterEvaluate {
                 version = rootProject.version.toString()
             }
         }
+        // Publish the plugin (and its marker) to GitHub Packages so a fresh
+        // consumer clone resolves it remotely, not from a local bootstrap.
+        // Same env/gpr credential resolution as the root runtime publication;
+        // no-op without credentials so a plain local build never fails.
+        val ownerAndRepo = System.getenv("GITHUB_REPOSITORY") ?: "AniCanon/swift-android-codegen"
+        val user = findProperty("gpr.user") as String? ?: System.getenv("GITHUB_ACTOR")
+        val token = findProperty("gpr.key") as String? ?: System.getenv("GITHUB_TOKEN")
+        if (user != null && token != null) {
+            repositories {
+                maven {
+                    name = "GitHubPackages"
+                    url = uri("https://maven.pkg.github.com/$ownerAndRepo")
+                    credentials {
+                        username = user
+                        password = token
+                    }
+                }
+            }
+        }
     }
 }
