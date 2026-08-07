@@ -115,6 +115,29 @@ struct KotlinBridgeEmitterTests {
         #expect(output.contains(".toList()"))
     }
 
+    @Test("Emits optional return type with orElse(null) conversion")
+    func optionalReturnType() {
+        let emitter = KotlinBridgeEmitter(config: config)
+        let bridge = BridgeDescriptor(
+            bridgeName: "LatestBridge",
+            swiftTypeName: "DefaultLatestUseCase",
+            initParams: [],
+            methods: [
+                .init(
+                    name: "latest",
+                    params: [.init(name: "id", swiftType: .simple("String"))],
+                    returnType: .init(swiftType: .optional(.simple("Session")), isVoid: false)
+                ),
+            ]
+        )
+
+        let output = emitter.emit(bridge)
+
+        #expect(output.contains(": Session?"))
+        #expect(output.contains(".orElse(null)"))
+        #expect(output.contains("import com.example.source.Session"))
+    }
+
     @Test("Emits void return without type annotation")
     func voidReturn() {
         let emitter = KotlinBridgeEmitter(config: config)

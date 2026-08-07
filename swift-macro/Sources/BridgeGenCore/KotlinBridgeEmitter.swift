@@ -163,6 +163,10 @@ public struct KotlinBridgeEmitter {
             chain += "\n" + String(repeating: "    ", count: 4) + ".toByteArray()"
         } else if method.returnType.swiftType.isArray {
             chain += "\n" + String(repeating: "    ", count: 4) + ".toList()"
+        } else if method.returnType.swiftType.isOptional {
+            // swift-java wraps optional returns as `java.util.Optional<T>`; unwrap to
+            // Kotlin's nullable `T?` that the emitted return type annotation expects.
+            chain += "\n" + String(repeating: "    ", count: 4) + ".orElse(null)"
         }
 
         w.line(chain)
