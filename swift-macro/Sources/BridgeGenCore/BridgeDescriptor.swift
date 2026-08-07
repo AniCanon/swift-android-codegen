@@ -75,6 +75,11 @@ public indirect enum SwiftType: Sendable {
         return false
     }
 
+    public var isOptional: Bool {
+        if case .optional = self { return true }
+        return false
+    }
+
     /// Whether a returned value of this type wraps a Swift object that must be
     /// registered in a `SwiftArena`. The swift-java accessors only expose a
     /// `SwiftArena` overload for such returns; primitives and `String` (and
