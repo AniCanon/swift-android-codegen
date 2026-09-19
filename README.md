@@ -159,7 +159,7 @@ class ProjectListBridge(
     private val projectClient: ProjectClient,
     private val profileClient: ProfileClient,
 ) {
-    private val arena = SwiftArena.ofAuto()
+    private val arena = SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA
     private val impl = DefaultProjectListUseCase.init(projectClient, profileClient, arena)
 
     suspend fun fetch(): ProjectListOverview =
@@ -256,7 +256,9 @@ swift-android-codegen/
 
 ### Bridges hide `SwiftArena`
 
-This is intentional. `SwiftArena` is a swift-java memory lifecycle detail — it shouldn't leak into your Kotlin API. Each bridge creates a single `SwiftArena.ofAuto()` and Swift instance at construction time, reused across all method calls. The auto arena ties Swift object lifetimes to Java GC reachability — as long as the bridge is referenced from Kotlin, its Swift objects stay alive. Your code never touches arenas.
+This is intentional. `SwiftArena` is a swift-java memory lifecycle detail — it shouldn't leak into your Kotlin API. Every bridge registers its Swift instances with swiftkit's process-wide `SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA`, the same arena swift-java's own generated overloads use. Each Swift object is still freed individually once its Kotlin wrapper becomes unreachable; the arena only routes that cleanup. Your code never touches arenas.
+
+Bridges never call `SwiftArena.ofAuto()` themselves: in swift-java 0.3.0 every `ofAuto()` call starts a dedicated cleaner thread that is never reclaimed, so an arena per bridge instance leaks one thread per bridge created.
 
 ### No auth or factory injection
 
