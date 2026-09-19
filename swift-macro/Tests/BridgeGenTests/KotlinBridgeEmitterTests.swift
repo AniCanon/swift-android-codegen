@@ -248,8 +248,7 @@ class ProjectListBridge(
 
     suspend fun upload(projectId: String, imageData: ByteArray) =
         withContext(Dispatchers.IO) {
-            val sharedImageData = Data.fromByteArray(imageData, arena)
-            impl.upload(projectId, sharedImageData)
+            impl.upload(projectId, Data.fromByteArray(imageData, arena))
                 .await()
         }
 }

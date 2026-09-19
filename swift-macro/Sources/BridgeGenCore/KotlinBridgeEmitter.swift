@@ -135,9 +135,6 @@ public struct KotlinBridgeEmitter {
             w.indented { w in
                 w.line("withContext(Dispatchers.IO) {")
                 w.indented { w in
-                    for param in method.params where param.swiftType.isData {
-                        w.line("val \(sharedName(param.name)) = Data.fromByteArray(\(param.name), arena)")
-                    }
                     emitMethodCall(&w, method: method)
                 }
                 w.line("}")
@@ -148,7 +145,7 @@ public struct KotlinBridgeEmitter {
     private func emitMethodCall(_ w: inout CodeWriter, method: BridgeDescriptor.Method) {
         var args: [String] = method.params.map { param in
             if param.swiftType.isData {
-                return sharedName(param.name)
+                return "Data.fromByteArray(\(param.name), arena)"
             } else if param.swiftType.isArray {
                 return "\(param.name).toTypedArray()"
             } else {
@@ -189,8 +186,4 @@ struct OrderedSet<Element: Hashable> {
             elements.append(element)
         }
     }
-}
-
-private func sharedName(_ name: String) -> String {
-    "shared" + name.prefix(1).uppercased() + name.dropFirst()
 }
