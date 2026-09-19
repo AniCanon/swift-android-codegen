@@ -15,7 +15,6 @@ struct KotlinBridgeEmitterTests {
         let bridge = BridgeDescriptor(
             bridgeName: "TestBridge",
             swiftTypeName: "DefaultTestUseCase",
-            initParams: [],
             methods: [
                 .init(
                     name: "fetch",
@@ -34,12 +33,12 @@ struct KotlinBridgeEmitterTests {
         #expect(output.contains("import org.swift.swiftkit.core.SwiftMemoryManagement"))
         #expect(output.contains("import com.example.source.DefaultTestUseCase"))
         #expect(output.contains("import com.example.source.ProjectOverview"))
-        #expect(output.contains("class TestBridge {"))
+        #expect(output.contains("class TestBridge(\n    private val defaultTestUseCase: DefaultTestUseCase,\n) {"))
         #expect(output.contains("private val arena = SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA"))
-        #expect(output.contains("private val impl = DefaultTestUseCase.init("))
+        #expect(!output.contains(".init("))
         #expect(output.contains("suspend fun fetch(): ProjectOverview"))
         #expect(output.contains("withContext(Dispatchers.IO)"))
-        #expect(output.contains("impl.fetch(arena)"))
+        #expect(output.contains("defaultTestUseCase.fetch(arena)"))
     }
 
     @Test("Emits Data parameter as ByteArray with fromByteArray conversion")
@@ -48,7 +47,6 @@ struct KotlinBridgeEmitterTests {
         let bridge = BridgeDescriptor(
             bridgeName: "UploadBridge",
             swiftTypeName: "DefaultUploadUseCase",
-            initParams: [],
             methods: [
                 .init(
                     name: "upload",
@@ -73,7 +71,6 @@ struct KotlinBridgeEmitterTests {
         let bridge = BridgeDescriptor(
             bridgeName: "DownloadBridge",
             swiftTypeName: "DefaultDownloadUseCase",
-            initParams: [],
             methods: [
                 .init(
                     name: "download",
@@ -96,7 +93,6 @@ struct KotlinBridgeEmitterTests {
         let bridge = BridgeDescriptor(
             bridgeName: "BatchBridge",
             swiftTypeName: "DefaultBatchUseCase",
-            initParams: [],
             methods: [
                 .init(
                     name: "process",
@@ -121,7 +117,6 @@ struct KotlinBridgeEmitterTests {
         let bridge = BridgeDescriptor(
             bridgeName: "LatestBridge",
             swiftTypeName: "DefaultLatestUseCase",
-            initParams: [],
             methods: [
                 .init(
                     name: "latest",
@@ -144,7 +139,6 @@ struct KotlinBridgeEmitterTests {
         let bridge = BridgeDescriptor(
             bridgeName: "ActionBridge",
             swiftTypeName: "DefaultActionUseCase",
-            initParams: [],
             methods: [
                 .init(
                     name: "execute",
@@ -160,47 +154,12 @@ struct KotlinBridgeEmitterTests {
         #expect(!output.contains("suspend fun execute(id: String):"))
     }
 
-    @Test("Emits constructor with multiple init params")
-    func multipleInitParams() {
-        let emitter = KotlinBridgeEmitter(config: config)
-        let bridge = BridgeDescriptor(
-            bridgeName: "ListBridge",
-            swiftTypeName: "DefaultListUseCase",
-            initParams: [
-                .init(name: "projectClient", swiftType: .simple("ProjectClient")),
-                .init(name: "profileClient", swiftType: .simple("ProfileClient")),
-            ],
-            methods: [
-                .init(
-                    name: "fetch",
-                    params: [],
-                    returnType: .init(swiftType: .simple("Overview"), isVoid: false)
-                ),
-            ]
-        )
-
-        let output = emitter.emit(bridge)
-
-        #expect(output.contains("class ListBridge("))
-        #expect(output.contains("private val projectClient: ProjectClient,"))
-        #expect(output.contains("private val profileClient: ProfileClient,"))
-        #expect(output.contains("private val impl = DefaultListUseCase.init("))
-        #expect(output.contains("projectClient,"))
-        #expect(output.contains("profileClient,"))
-        #expect(output.contains("import com.example.source.ProjectClient"))
-        #expect(output.contains("import com.example.source.ProfileClient"))
-    }
-
     @Test("Golden file — full output snapshot")
     func goldenFile() {
         let emitter = KotlinBridgeEmitter(config: config)
         let bridge = BridgeDescriptor(
             bridgeName: "ProjectListBridge",
-            swiftTypeName: "DefaultProjectListUseCase",
-            initParams: [
-                .init(name: "projectClient", swiftType: .simple("ProjectClient")),
-                .init(name: "profileClient", swiftType: .simple("ProfileClient")),
-            ],
+            swiftTypeName: "ProjectListUseCase",
             methods: [
                 .init(
                     name: "fetch",
@@ -228,27 +187,24 @@ import com.example.runtime.await
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.swift.swiftkit.core.SwiftMemoryManagement
-import com.example.source.DefaultProjectListUseCase
+import com.example.source.ProjectListUseCase
 import com.example.source.ProjectListOverview
 import com.example.source.Data
-import com.example.source.ProjectClient
-import com.example.source.ProfileClient
 
 class ProjectListBridge(
-    private val projectClient: ProjectClient,
-    private val profileClient: ProfileClient,
+    private val projectListUseCase: ProjectListUseCase,
 ) {
     private val arena = SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA
-    private val impl = DefaultProjectListUseCase.init(projectClient, profileClient, arena)
+
     suspend fun fetch(): ProjectListOverview =
         withContext(Dispatchers.IO) {
-            impl.fetch(arena)
+            projectListUseCase.fetch(arena)
                 .await()
         }
 
     suspend fun upload(projectId: String, imageData: ByteArray) =
         withContext(Dispatchers.IO) {
-            impl.upload(projectId, Data.fromByteArray(imageData, arena))
+            projectListUseCase.upload(projectId, Data.fromByteArray(imageData, arena))
                 .await()
         }
 }
@@ -263,7 +219,6 @@ class ProjectListBridge(
         let bridge = BridgeDescriptor(
             bridgeName: "RefsBridge",
             swiftTypeName: "DefaultRefsUseCase",
-            initParams: [],
             methods: [
                 .init(
                     name: "listReferenceImages",
@@ -275,8 +230,8 @@ class ProjectListBridge(
 
         let output = emitter.emit(bridge)
 
-        #expect(output.contains("impl.listReferenceImages(outfitId)"))
-        #expect(!output.contains("impl.listReferenceImages(outfitId, arena)"))
+        #expect(output.contains("defaultRefsUseCase.listReferenceImages(outfitId)"))
+        #expect(!output.contains("defaultRefsUseCase.listReferenceImages(outfitId, arena)"))
         #expect(output.contains(".toList()"))
     }
 
@@ -286,7 +241,6 @@ class ProjectListBridge(
         let bridge = BridgeDescriptor(
             bridgeName: "NameBridge",
             swiftTypeName: "DefaultNameUseCase",
-            initParams: [],
             methods: [
                 .init(
                     name: "name",
@@ -298,8 +252,8 @@ class ProjectListBridge(
 
         let output = emitter.emit(bridge)
 
-        #expect(output.contains("impl.name(id)"))
-        #expect(!output.contains("impl.name(id, arena)"))
+        #expect(output.contains("defaultNameUseCase.name(id)"))
+        #expect(!output.contains("defaultNameUseCase.name(id, arena)"))
     }
 
     @Test("Keeps arena for object array returns")
@@ -308,7 +262,6 @@ class ProjectListBridge(
         let bridge = BridgeDescriptor(
             bridgeName: "OutfitsBridge",
             swiftTypeName: "DefaultOutfitsUseCase",
-            initParams: [],
             methods: [
                 .init(
                     name: "listOutfits",
@@ -320,7 +273,7 @@ class ProjectListBridge(
 
         let output = emitter.emit(bridge)
 
-        #expect(output.contains("impl.listOutfits(characterId, arena)"))
+        #expect(output.contains("defaultOutfitsUseCase.listOutfits(characterId, arena)"))
     }
 
     @Test("Emits optional types with ? in Kotlin")
@@ -329,7 +282,6 @@ class ProjectListBridge(
         let bridge = BridgeDescriptor(
             bridgeName: "SearchBridge",
             swiftTypeName: "DefaultSearchUseCase",
-            initParams: [],
             methods: [
                 .init(
                     name: "search",
@@ -348,23 +300,21 @@ class ProjectListBridge(
         #expect(output.contains(": SearchResult?"))
     }
 
-    @Test("Protocol bridge wraps the instance it is given")
+    @Test("Bridge wraps the instance it is given")
     func protocolBridge() {
         let emitter = KotlinBridgeEmitter(config: config)
         let bridge = BridgeDescriptor(
             bridgeName: "ProjectListBridge",
             swiftTypeName: "ProjectListUseCase",
-            initParams: [.init(name: "projectListUseCase", swiftType: .simple("ProjectListUseCase"))],
-            methods: [.init(name: "fetch", params: [], returnType: .init(swiftType: .simple("ProjectListOverview"), isVoid: false))],
-            wrapsProtocol: true
+            methods: [.init(name: "fetch", params: [], returnType: .init(swiftType: .simple("ProjectListOverview"), isVoid: false))]
         )
 
         let output = emitter.emit(bridge)
 
         #expect(output.contains("class ProjectListBridge("))
         #expect(output.contains("private val projectListUseCase: ProjectListUseCase,"))
-        #expect(output.contains("private val impl = projectListUseCase"))
+        #expect(!output.contains("impl"))
         #expect(!output.contains("ProjectListUseCase.init("))
-        #expect(output.contains("impl.fetch(arena)"))
+        #expect(output.contains("projectListUseCase.fetch(arena)"))
     }
 }

@@ -40,7 +40,7 @@ public struct KotlinBridgeEmitter {
 
         for (i, method) in bridge.methods.enumerated() {
             if i > 0 { w.line() }
-            emitMethod(&w, method: method)
+            emitMethod(&w, method: method, wrappedName: bridge.wrappedName)
         }
 
         w.line("}")
@@ -76,51 +76,29 @@ public struct KotlinBridgeEmitter {
             }
         }
 
-        for initParam in bridge.initParams {
-            if let name = initParam.swiftType.importableTypeName {
-                imports.append(config.sourcePackage + "." + name)
-            }
-        }
-
         return imports.elements
     }
 
     // MARK: - Class structure
 
     private func emitClassHeader(_ w: inout CodeWriter, bridge: BridgeDescriptor) {
-        if bridge.initParams.isEmpty {
-            w.line("class \(bridge.bridgeName) {")
-        } else {
-            w.line("class \(bridge.bridgeName)(")
-            w.indented { w in
-                for initParam in bridge.initParams {
-                    w.line("private val \(initParam.name): \(initParam.swiftType.kotlinType),")
-                }
-            }
-            w.line(") {")
+        w.line("class \(bridge.bridgeName)(")
+        w.indented { w in
+            w.line("private val \(bridge.wrappedName): \(bridge.swiftTypeName),")
         }
+        w.line(") {")
     }
 
     private func emitInstanceProperties(_ w: inout CodeWriter, bridge: BridgeDescriptor) {
         w.indented { w in
             w.line("private val arena = SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA")
-
-            if bridge.wrapsProtocol, let wrapped = bridge.initParams.first {
-                w.line("private val impl = \(wrapped.name)")
-                return
-            }
-
-            var initArgs = bridge.initParams.map(\.name)
-            initArgs.append("arena")
-            let argsString = initArgs.joined(separator: ", ")
-
-            w.line("private val impl = \(bridge.swiftTypeName).init(\(argsString))")
+            w.line()
         }
     }
 
     // MARK: - Methods
 
-    private func emitMethod(_ w: inout CodeWriter, method: BridgeDescriptor.Method) {
+    private func emitMethod(_ w: inout CodeWriter, method: BridgeDescriptor.Method, wrappedName: String) {
         let returnType = method.returnType.swiftType.kotlinType
         let paramDecls = method.params.map { "\($0.name): \($0.swiftType.kotlinType)" }
 
@@ -135,14 +113,14 @@ public struct KotlinBridgeEmitter {
             w.indented { w in
                 w.line("withContext(Dispatchers.IO) {")
                 w.indented { w in
-                    emitMethodCall(&w, method: method)
+                    emitMethodCall(&w, method: method, wrappedName: wrappedName)
                 }
                 w.line("}")
             }
         }
     }
 
-    private func emitMethodCall(_ w: inout CodeWriter, method: BridgeDescriptor.Method) {
+    private func emitMethodCall(_ w: inout CodeWriter, method: BridgeDescriptor.Method, wrappedName: String) {
         var args: [String] = method.params.map { param in
             if param.swiftType.isData {
                 return "Data.fromByteArray(\(param.name), arena)"
@@ -158,7 +136,7 @@ public struct KotlinBridgeEmitter {
             args.append("arena")
         }
 
-        var chain = "impl.\(method.name)(\(args.joined(separator: ", ")))"
+        var chain = "\(wrappedName).\(method.name)(\(args.joined(separator: ", ")))"
         chain += "\n" + String(repeating: "    ", count: 4) + ".await()"
 
         if method.returnType.swiftType.isData {

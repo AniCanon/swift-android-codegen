@@ -1,34 +1,23 @@
-/// Describes a single Kotlin bridge to generate.
+/// Describes a single Kotlin bridge to generate. A bridge wraps an instance of the
+/// annotated Swift type (a protocol, class or struct) that is passed to its constructor.
 public struct BridgeDescriptor: Sendable {
     public let bridgeName: String
     public let swiftTypeName: String
-    public let initParams: [InitParam]
     public let methods: [Method]
-    /// The bridge wraps an instance of a Swift protocol passed in, rather than constructing a type.
-    public let wrapsProtocol: Bool
 
     public init(
         bridgeName: String,
         swiftTypeName: String,
-        initParams: [InitParam],
-        methods: [Method],
-        wrapsProtocol: Bool = false
+        methods: [Method]
     ) {
         self.bridgeName = bridgeName
         self.swiftTypeName = swiftTypeName
-        self.initParams = initParams
         self.methods = methods
-        self.wrapsProtocol = wrapsProtocol
     }
 
-    public struct InitParam: Sendable {
-        public let name: String
-        public let swiftType: SwiftType
-
-        public init(name: String, swiftType: SwiftType) {
-            self.name = name
-            self.swiftType = swiftType
-        }
+    /// Name of the constructor property holding the wrapped instance.
+    public var wrappedName: String {
+        swiftTypeName.prefix(1).lowercased() + swiftTypeName.dropFirst()
     }
 
     public struct Method: Sendable {
