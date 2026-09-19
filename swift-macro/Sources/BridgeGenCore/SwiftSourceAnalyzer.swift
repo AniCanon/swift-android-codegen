@@ -50,6 +50,24 @@ private final class BridgeVisitor: SyntaxVisitor {
         return .skipChildren
     }
 
+    override func visit(_ node: ProtocolDeclSyntax) -> SyntaxVisitorContinueKind {
+        guard let bridgeName = extractBridgeName(from: node.attributes) else { return .skipChildren }
+        let methods = extractMethods(from: node.memberBlock, requiresPublic: false)
+        guard !methods.isEmpty else {
+            print("warning: @AndroidBridge(\"\(bridgeName)\") on '\(node.name.text)' has no async requirements — skipping")
+            return .skipChildren
+        }
+        let protocolName = node.name.text
+        bridges.append(BridgeDescriptor(
+            bridgeName: bridgeName,
+            swiftTypeName: protocolName,
+            initParams: [.init(name: protocolName.lowercasedFirst, swiftType: .simple(protocolName))],
+            methods: methods,
+            wrapsProtocol: true
+        ))
+        return .skipChildren
+    }
+
     private func extractBridge(
         from attributes: AttributeListSyntax,
         name: TokenSyntax,
@@ -58,7 +76,7 @@ private final class BridgeVisitor: SyntaxVisitor {
         guard let bridgeName = extractBridgeName(from: attributes) else { return nil }
 
         let initParams = extractInitParams(from: members)
-        let methods = extractMethods(from: members)
+        let methods = extractMethods(from: members, requiresPublic: true)
 
         guard !methods.isEmpty else {
             print("warning: @AndroidBridge(\"\(bridgeName)\") on '\(name.text)' has no public async methods — skipping")
@@ -107,14 +125,14 @@ private final class BridgeVisitor: SyntaxVisitor {
         return []
     }
 
-    private func extractMethods(from members: MemberBlockSyntax) -> [BridgeDescriptor.Method] {
+    private func extractMethods(from members: MemberBlockSyntax, requiresPublic: Bool) -> [BridgeDescriptor.Method] {
         var methods: [BridgeDescriptor.Method] = []
 
         for member in members.members {
             guard let funcDecl = member.decl.as(FunctionDeclSyntax.self) else { continue }
 
             let isPublic = funcDecl.modifiers.contains { $0.name.text == "public" }
-            guard isPublic else { continue }
+            guard isPublic || !requiresPublic else { continue }
 
             let isAsync = funcDecl.signature.effectSpecifiers?.asyncSpecifier != nil
             guard isAsync else { continue }
@@ -189,4 +207,8 @@ private final class BridgeVisitor: SyntaxVisitor {
 
         return .simple(type.trimmedDescription)
     }
+}
+
+private extension String {
+    var lowercasedFirst: String { prefix(1).lowercased() + dropFirst() }
 }

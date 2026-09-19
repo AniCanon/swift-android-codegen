@@ -197,4 +197,24 @@ struct SwiftSourceAnalyzerTests {
         #expect(bridges[0].bridgeName == "SuggestBridge")
         #expect(bridges[1].bridgeName == "GenerateBridge")
     }
+
+    @Test("Extracts protocol bridge from async requirements")
+    func protocolBridge() {
+        let source = """
+        @AndroidBridge("ProjectListBridge")
+        public protocol ProjectListUseCase: Sendable {
+            func fetch() async throws -> ProjectListOverview
+            func followProject(projectId: String) async throws -> ProjectFollowState
+            func observe() -> AsyncThrowingStream<ProjectListOverview, Error>
+        }
+        """
+
+        let bridges = analyzer.analyzeSource(source)
+        #expect(bridges.count == 1)
+        let bridge = bridges[0]
+        #expect(bridge.wrapsProtocol)
+        #expect(bridge.swiftTypeName == "ProjectListUseCase")
+        #expect(bridge.initParams.map(\.name) == ["projectListUseCase"])
+        #expect(bridge.methods.map(\.name) == ["fetch", "followProject"])
+    }
 }

@@ -4,12 +4,21 @@ public struct BridgeDescriptor: Sendable {
     public let swiftTypeName: String
     public let initParams: [InitParam]
     public let methods: [Method]
+    /// The bridge wraps an instance of a Swift protocol passed in, rather than constructing a type.
+    public let wrapsProtocol: Bool
 
-    public init(bridgeName: String, swiftTypeName: String, initParams: [InitParam], methods: [Method]) {
+    public init(
+        bridgeName: String,
+        swiftTypeName: String,
+        initParams: [InitParam],
+        methods: [Method],
+        wrapsProtocol: Bool = false
+    ) {
         self.bridgeName = bridgeName
         self.swiftTypeName = swiftTypeName
         self.initParams = initParams
         self.methods = methods
+        self.wrapsProtocol = wrapsProtocol
     }
 
     public struct InitParam: Sendable {

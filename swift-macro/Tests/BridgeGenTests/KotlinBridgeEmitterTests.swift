@@ -248,8 +248,8 @@ class ProjectListBridge(
 
     suspend fun upload(projectId: String, imageData: ByteArray) =
         withContext(Dispatchers.IO) {
-            val swiftImageData = Data.fromByteArray(imageData, arena)
-            impl.upload(projectId, swiftImageData)
+            val sharedImageData = Data.fromByteArray(imageData, arena)
+            impl.upload(projectId, sharedImageData)
                 .await()
         }
 }
@@ -347,5 +347,25 @@ class ProjectListBridge(
 
         #expect(output.contains("filter: String?"))
         #expect(output.contains(": SearchResult?"))
+    }
+
+    @Test("Protocol bridge wraps the instance it is given")
+    func protocolBridge() {
+        let emitter = KotlinBridgeEmitter(config: config)
+        let bridge = BridgeDescriptor(
+            bridgeName: "ProjectListBridge",
+            swiftTypeName: "ProjectListUseCase",
+            initParams: [.init(name: "projectListUseCase", swiftType: .simple("ProjectListUseCase"))],
+            methods: [.init(name: "fetch", params: [], returnType: .init(swiftType: .simple("ProjectListOverview"), isVoid: false))],
+            wrapsProtocol: true
+        )
+
+        let output = emitter.emit(bridge)
+
+        #expect(output.contains("class ProjectListBridge("))
+        #expect(output.contains("private val projectListUseCase: ProjectListUseCase,"))
+        #expect(output.contains("private val impl = projectListUseCase"))
+        #expect(!output.contains("ProjectListUseCase.init("))
+        #expect(output.contains("impl.fetch(arena)"))
     }
 }

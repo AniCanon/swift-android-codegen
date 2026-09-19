@@ -105,6 +105,11 @@ public struct KotlinBridgeEmitter {
         w.indented { w in
             w.line("private val arena = SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA")
 
+            if bridge.wrapsProtocol, let wrapped = bridge.initParams.first {
+                w.line("private val impl = \(wrapped.name)")
+                return
+            }
+
             var initArgs = bridge.initParams.map(\.name)
             initArgs.append("arena")
             let argsString = initArgs.joined(separator: ", ")
@@ -131,7 +136,7 @@ public struct KotlinBridgeEmitter {
                 w.line("withContext(Dispatchers.IO) {")
                 w.indented { w in
                     for param in method.params where param.swiftType.isData {
-                        w.line("val swift\(param.name.uppercasedFirst) = Data.fromByteArray(\(param.name), arena)")
+                        w.line("val \(sharedName(param.name)) = Data.fromByteArray(\(param.name), arena)")
                     }
                     emitMethodCall(&w, method: method)
                 }
@@ -143,7 +148,7 @@ public struct KotlinBridgeEmitter {
     private func emitMethodCall(_ w: inout CodeWriter, method: BridgeDescriptor.Method) {
         var args: [String] = method.params.map { param in
             if param.swiftType.isData {
-                return "swift\(param.name.uppercasedFirst)"
+                return sharedName(param.name)
             } else if param.swiftType.isArray {
                 return "\(param.name).toTypedArray()"
             } else {
@@ -186,9 +191,6 @@ struct OrderedSet<Element: Hashable> {
     }
 }
 
-private extension String {
-    var uppercasedFirst: String {
-        guard let first = self.first else { return self }
-        return first.uppercased() + dropFirst()
-    }
+private func sharedName(_ name: String) -> String {
+    "shared" + name.prefix(1).uppercased() + name.dropFirst()
 }
