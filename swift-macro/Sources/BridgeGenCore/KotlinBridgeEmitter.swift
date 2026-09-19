@@ -54,7 +54,7 @@ public struct KotlinBridgeEmitter {
         imports.append(config.runtimePackage + ".await")
         imports.append("kotlinx.coroutines.Dispatchers")
         imports.append("kotlinx.coroutines.withContext")
-        imports.append("org.swift.swiftkit.core.SwiftArena")
+        imports.append("org.swift.swiftkit.core.SwiftMemoryManagement")
         imports.append(config.sourcePackage + "." + bridge.swiftTypeName)
 
         for method in bridge.methods {
@@ -103,7 +103,7 @@ public struct KotlinBridgeEmitter {
 
     private func emitInstanceProperties(_ w: inout CodeWriter, bridge: BridgeDescriptor) {
         w.indented { w in
-            w.line("private val arena = SwiftArena.ofAuto()")
+            w.line("private val arena = SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA")
 
             var initArgs = bridge.initParams.map(\.name)
             initArgs.append("arena")

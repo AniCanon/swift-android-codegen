@@ -31,11 +31,11 @@ struct KotlinBridgeEmitterTests {
         #expect(output.contains("import com.example.runtime.await"))
         #expect(output.contains("import kotlinx.coroutines.Dispatchers"))
         #expect(output.contains("import kotlinx.coroutines.withContext"))
-        #expect(output.contains("import org.swift.swiftkit.core.SwiftArena"))
+        #expect(output.contains("import org.swift.swiftkit.core.SwiftMemoryManagement"))
         #expect(output.contains("import com.example.source.DefaultTestUseCase"))
         #expect(output.contains("import com.example.source.ProjectOverview"))
         #expect(output.contains("class TestBridge {"))
-        #expect(output.contains("private val arena = SwiftArena.ofAuto()"))
+        #expect(output.contains("private val arena = SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA"))
         #expect(output.contains("private val impl = DefaultTestUseCase.init("))
         #expect(output.contains("suspend fun fetch(): ProjectOverview"))
         #expect(output.contains("withContext(Dispatchers.IO)"))
@@ -227,7 +227,7 @@ package com.example.bridge
 import com.example.runtime.await
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.swift.swiftkit.core.SwiftArena
+import org.swift.swiftkit.core.SwiftMemoryManagement
 import com.example.source.DefaultProjectListUseCase
 import com.example.source.ProjectListOverview
 import com.example.source.Data
@@ -238,7 +238,7 @@ class ProjectListBridge(
     private val projectClient: ProjectClient,
     private val profileClient: ProfileClient,
 ) {
-    private val arena = SwiftArena.ofAuto()
+    private val arena = SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA
     private val impl = DefaultProjectListUseCase.init(projectClient, profileClient, arena)
     suspend fun fetch(): ProjectListOverview =
         withContext(Dispatchers.IO) {
