@@ -50,16 +50,22 @@ private final class BridgeVisitor: SyntaxVisitor {
         return .skipChildren
     }
 
+    override func visit(_ node: ProtocolDeclSyntax) -> SyntaxVisitorContinueKind {
+        if let bridge = extractBridge(from: node.attributes, name: node.name, members: node.memberBlock, requiresPublic: false) {
+            bridges.append(bridge)
+        }
+        return .skipChildren
+    }
+
     private func extractBridge(
         from attributes: AttributeListSyntax,
         name: TokenSyntax,
-        members: MemberBlockSyntax
+        members: MemberBlockSyntax,
+        requiresPublic: Bool = true
     ) -> BridgeDescriptor? {
         guard let bridgeName = extractBridgeName(from: attributes) else { return nil }
 
-        let initParams = extractInitParams(from: members)
-        let methods = extractMethods(from: members)
-
+        let methods = extractMethods(from: members, requiresPublic: requiresPublic)
         guard !methods.isEmpty else {
             print("warning: @AndroidBridge(\"\(bridgeName)\") on '\(name.text)' has no public async methods — skipping")
             return nil
@@ -68,7 +74,6 @@ private final class BridgeVisitor: SyntaxVisitor {
         return BridgeDescriptor(
             bridgeName: bridgeName,
             swiftTypeName: name.text,
-            initParams: initParams,
             methods: methods
         )
     }
@@ -89,32 +94,14 @@ private final class BridgeVisitor: SyntaxVisitor {
         return nil
     }
 
-    private func extractInitParams(from members: MemberBlockSyntax) -> [BridgeDescriptor.InitParam] {
-        // Uses the first public init found (the designated initializer).
-        for member in members.members {
-            guard let initDecl = member.decl.as(InitializerDeclSyntax.self) else { continue }
-            let isPublic = initDecl.modifiers.contains { $0.name.text == "public" }
-            guard isPublic else { continue }
-
-            var params: [BridgeDescriptor.InitParam] = []
-            for param in initDecl.signature.parameterClause.parameters {
-                let paramName = (param.secondName ?? param.firstName).text
-                let swiftType = parseSwiftType(param.type)
-                params.append(.init(name: paramName, swiftType: swiftType))
-            }
-            return params
-        }
-        return []
-    }
-
-    private func extractMethods(from members: MemberBlockSyntax) -> [BridgeDescriptor.Method] {
+    private func extractMethods(from members: MemberBlockSyntax, requiresPublic: Bool) -> [BridgeDescriptor.Method] {
         var methods: [BridgeDescriptor.Method] = []
 
         for member in members.members {
             guard let funcDecl = member.decl.as(FunctionDeclSyntax.self) else { continue }
 
             let isPublic = funcDecl.modifiers.contains { $0.name.text == "public" }
-            guard isPublic else { continue }
+            guard isPublic || !requiresPublic else { continue }
 
             let isAsync = funcDecl.signature.effectSpecifiers?.asyncSpecifier != nil
             guard isAsync else { continue }

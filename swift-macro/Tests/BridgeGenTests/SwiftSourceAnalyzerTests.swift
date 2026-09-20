@@ -37,11 +37,7 @@ struct SwiftSourceAnalyzerTests {
         #expect(bridge.bridgeName == "ProjectListBridge")
         #expect(bridge.swiftTypeName == "DefaultProjectListUseCase")
 
-        #expect(bridge.initParams.count == 2)
-        #expect(bridge.initParams[0].name == "projectClient")
-        #expect(bridge.initParams[0].swiftType.kotlinType == "ProjectClient")
-        #expect(bridge.initParams[1].name == "profileClient")
-        #expect(bridge.initParams[1].swiftType.kotlinType == "ProfileClient")
+        #expect(bridge.wrappedName == "defaultProjectListUseCase")
 
         #expect(bridge.methods.count == 1)
         #expect(bridge.methods[0].name == "fetch")
@@ -75,9 +71,7 @@ struct SwiftSourceAnalyzerTests {
 
         let bridge = bridges[0]
         #expect(bridge.bridgeName == "BackdropCreationBridge")
-        #expect(bridge.initParams.count == 1)
-        #expect(bridge.initParams[0].name == "api")
-        #expect(bridge.initParams[0].swiftType.kotlinType == "APIClient")
+        #expect(bridge.wrappedName == "remoteBackdropClient")
 
         #expect(bridge.methods.count == 2)
         #expect(bridge.methods[0].name == "listBackdrops")
@@ -196,5 +190,44 @@ struct SwiftSourceAnalyzerTests {
         #expect(bridges.count == 2)
         #expect(bridges[0].bridgeName == "SuggestBridge")
         #expect(bridges[1].bridgeName == "GenerateBridge")
+    }
+
+    @Test("Extracts protocol bridge from async requirements")
+    func protocolBridge() {
+        let source = """
+        @AndroidBridge("ProjectListBridge")
+        public protocol ProjectListUseCase: Sendable {
+            func fetch() async throws -> ProjectListOverview
+            func followProject(projectId: String) async throws -> ProjectFollowState
+            func observe() -> AsyncThrowingStream<ProjectListOverview, Error>
+        }
+        """
+
+        let bridges = analyzer.analyzeSource(source)
+        #expect(bridges.count == 1)
+        let bridge = bridges[0]
+        #expect(bridge.swiftTypeName == "ProjectListUseCase")
+        #expect(bridge.wrappedName == "projectListUseCase")
+        #expect(bridge.methods.map(\.name) == ["fetch", "followProject"])
+    }
+
+    @Test("Extracts class bridge without a public initializer")
+    func classBridgeWithoutPublicInit() {
+        let source = """
+        @AndroidBridge("OverviewObservationBridge")
+        public final class OverviewObservation: @unchecked Sendable {
+            init(stream: AsyncThrowingStream<Overview, Error>) {}
+            public func next() async throws -> Overview? { nil }
+            public func cancel() async {}
+            func internalHelper() async {}
+        }
+        """
+
+        let bridges = analyzer.analyzeSource(source)
+        #expect(bridges.count == 1)
+        #expect(bridges[0].wrappedName == "overviewObservation")
+        #expect(bridges[0].methods.map(\.name) == ["next", "cancel"])
+        #expect(bridges[0].methods[0].returnType.swiftType.isOptional)
+        #expect(bridges[0].methods[1].returnType.isVoid)
     }
 }

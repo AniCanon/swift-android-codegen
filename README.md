@@ -10,16 +10,14 @@ swift-java generates Java bindings for your Swift types. These bindings work, bu
 
 **Before** (raw swift-java bindings):
 ```kotlin
-val arena = SwiftArena.ofAuto()
-val useCase = DefaultProjectListUseCase.init(projectClient, profileClient, arena)
 val result = withContext(Dispatchers.IO) {
-    useCase.fetch(arena).whenComplete { value, error -> ... }
+    useCase.fetch(SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA).whenComplete { value, error -> ... }
 }
 ```
 
 **After** (generated bridge):
 ```kotlin
-val bridge = ProjectListBridge(projectClient, profileClient)
+val bridge = ProjectListUseCaseBridge(useCase)
 val result = bridge.fetch()
 ```
 
@@ -130,52 +128,48 @@ The runtime is a single file — a `CompletableFuture<T>.await()` extension that
 
 ### Annotate your Swift types
 
+Annotate the protocol your features depend on. Any conforming instance — the production implementation or a test stub — can then be bridged.
+
 ```swift
 import SwiftAndroidCodegen
 
-@AndroidBridge("ProjectListBridge")
-public struct DefaultProjectListUseCase: ProjectListUseCase {
-    private let projectClient: any ProjectClient
-    private let profileClient: any ProfileClient
-
-    public init(
-        projectClient: any ProjectClient,
-        profileClient: any ProfileClient
-    ) {
-        self.projectClient = projectClient
-        self.profileClient = profileClient
-    }
-
-    public func fetch() async throws -> ProjectListOverview {
-        // ...
-    }
+@AndroidBridge("ProjectListUseCaseBridge")
+public protocol ProjectListUseCase: Sendable {
+    func fetch() async throws -> ProjectListOverview
+    func followProject(projectId: String) async throws -> ProjectFollowState
 }
 ```
+
+Classes and structs can be annotated too; only their `public` async methods are bridged.
 
 ### What gets generated
 
 ```kotlin
-class ProjectListBridge(
-    private val projectClient: ProjectClient,
-    private val profileClient: ProfileClient,
+class ProjectListUseCaseBridge(
+    private val projectListUseCase: ProjectListUseCase,
 ) {
     private val arena = SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA
-    private val impl = DefaultProjectListUseCase.init(projectClient, profileClient, arena)
 
     suspend fun fetch(): ProjectListOverview =
         withContext(Dispatchers.IO) {
-            impl.fetch(arena)
+            projectListUseCase.fetch(arena)
+                .await()
+        }
+
+    suspend fun followProject(projectId: String): ProjectFollowState =
+        withContext(Dispatchers.IO) {
+            projectListUseCase.followProject(projectId, arena)
                 .await()
         }
 }
 ```
 
-The bridge mirrors the Swift type's constructor — same parameters, same names. The Swift instance and arena are created once and reused across all method calls. The auto arena ensures Swift objects stay alive as long as the bridge is reachable from Kotlin. You provide the dependencies; the bridge handles the rest.
+The bridge wraps the Swift instance it is given. It never constructs Swift objects itself, so creating the instance — and its dependencies — stays with the app.
 
 ### Use from Android
 
 ```kotlin
-val bridge = ProjectListBridge(projectClient, profileClient)
+val bridge = ProjectListUseCaseBridge(useCase)
 val overview = bridge.fetch() // suspend fun, use from any coroutine scope
 ```
 
@@ -199,8 +193,8 @@ val overview = bridge.fetch() // suspend fun, use from any coroutine scope
 
 The `bridge-gen` CLI scans for types annotated with `@AndroidBridge` and extracts:
 
-- **Init parameters** — become the bridge's constructor. `any Protocol` types are recognized as protocol dependencies.
-- **Public async methods** — become `suspend fun` on the bridge. Synchronous and non-public methods are ignored.
+- **The annotated type** — becomes the bridge's single constructor parameter.
+- **Async methods** — become `suspend fun` on the bridge: every async requirement of a protocol, and the `public` async methods of a class or struct. Synchronous methods are ignored.
 - **Return types** — mapped to Kotlin equivalents. Void methods omit the return type.
 
 Types without `@AndroidBridge` are ignored. The `@AndroidBridge` macro itself is a no-op peer macro — it produces no code at compile time and exists purely as a marker for the code generator.
@@ -258,17 +252,15 @@ swift-android-codegen/
 
 This is intentional. `SwiftArena` is a swift-java memory lifecycle detail — it shouldn't leak into your Kotlin API. Every bridge registers its Swift instances with swiftkit's process-wide `SwiftMemoryManagement.DEFAULT_SWIFT_JAVA_AUTO_ARENA`, the same arena swift-java's own generated overloads use. Each Swift object is still freed individually once its Kotlin wrapper becomes unreachable; the arena only routes that cleanup. Your code never touches arenas.
 
-Bridges never call `SwiftArena.ofAuto()` themselves: in swift-java 0.3.0 every `ofAuto()` call starts a dedicated cleaner thread that is never reclaimed, so an arena per bridge instance leaks one thread per bridge created.
+Bridges never call `SwiftArena.ofAuto()` themselves: in swift-java every `ofAuto()` call starts a dedicated cleaner thread that is never reclaimed, so an arena per bridge instance leaks one thread per bridge created.
 
 ### No auth or factory injection
 
-The bridge takes the same dependencies as the Swift type. If your Swift `init` takes `projectClient: any ProjectClient`, the generated bridge constructor takes `projectClient: ProjectClient`. Period.
+The bridge takes the Swift instance and nothing else. How that instance and its dependencies are created — auth tokens, API client lifecycle, dependency injection — is your concern. The code generator is deliberately unopinionated about this. Wire it however makes sense for your app.
 
-How you create those dependencies — auth tokens, API client lifecycle, dependency injection — is your concern. The code generator is deliberately unopinionated about this. Wire it however makes sense for your app.
+### Only async methods
 
-### Only public async methods
-
-The generator only creates bridge methods for `public` functions marked `async`. Synchronous helpers, private methods, and non-async functions are excluded. This keeps the generated API surface intentional — only methods designed for cross-platform use get bridged.
+The generator only creates bridge methods for functions marked `async` (and, on classes and structs, `public`). Synchronous helpers are excluded. This keeps the generated API surface intentional — only methods designed for cross-platform use get bridged.
 
 ## Dependencies
 
