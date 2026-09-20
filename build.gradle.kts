@@ -1,5 +1,5 @@
 group = "dev.anicanon.swiftandroid.codegen"
-version = "0.2.4"
+version = "0.3.0"
 
 allprojects {
     group = rootProject.group
