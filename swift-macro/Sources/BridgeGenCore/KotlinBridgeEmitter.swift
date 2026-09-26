@@ -40,7 +40,12 @@ public struct KotlinBridgeEmitter {
 
         for (i, method) in bridge.methods.enumerated() {
             if i > 0 { w.line() }
-            emitMethod(&w, method: method, wrappedName: bridge.wrappedName)
+            switch method.kind {
+            case .async:
+                emitMethod(&w, method: method, wrappedName: bridge.wrappedName)
+            case .stream:
+                emitStreamMethod(&w, method: method, bridge: bridge)
+            }
         }
 
         w.line("}")
@@ -76,6 +81,14 @@ public struct KotlinBridgeEmitter {
             }
         }
 
+        if bridge.hasStreamMethods {
+            imports.append("kotlinx.coroutines.flow.Flow")
+            imports.append(config.runtimePackage + ".observationFlow")
+            for method in bridge.methods where method.kind != .async {
+                imports.append(config.sourcePackage + "." + bridge.observationTypeName(for: method))
+            }
+        }
+
         return imports.elements
     }
 
@@ -100,16 +113,10 @@ public struct KotlinBridgeEmitter {
 
     private func emitMethod(_ w: inout CodeWriter, method: BridgeDescriptor.Method, wrappedName: String) {
         let returnType = method.returnType.swiftType.kotlinType
-        let paramDecls = method.params.map { "\($0.name): \($0.swiftType.kotlinType)" }
-
-        let paramsString = paramDecls.count > 2
-            ? "\n        " + paramDecls.joined(separator: ",\n        ") + ",\n    "
-            : paramDecls.joined(separator: ", ")
-
         let returnAnnotation = method.returnType.isVoid ? "" : ": \(returnType)"
 
         w.indented { w in
-            w.line("suspend fun \(method.name)(\(paramsString))\(returnAnnotation) =")
+            w.line("suspend fun \(method.name)(\(parameterList(method)))\(returnAnnotation) =")
             w.indented { w in
                 w.line("withContext(Dispatchers.IO) {")
                 w.indented { w in
@@ -121,15 +128,7 @@ public struct KotlinBridgeEmitter {
     }
 
     private func emitMethodCall(_ w: inout CodeWriter, method: BridgeDescriptor.Method, wrappedName: String) {
-        var args: [String] = method.params.map { param in
-            if param.swiftType.isData {
-                return "Data.fromByteArray(\(param.name), arena)"
-            } else if param.swiftType.isArray {
-                return "\(param.name).toTypedArray()"
-            } else {
-                return param.name
-            }
-        }
+        var args = kotlinArguments(method)
         // Only object-wrapping returns have a SwiftArena accessor overload; passing
         // an arena for String/primitive (and arrays of them) returns would not resolve.
         if !method.returnType.isVoid && method.returnType.swiftType.wrapsSwiftObjectWhenReturned {
@@ -150,6 +149,69 @@ public struct KotlinBridgeEmitter {
         }
 
         w.line(chain)
+    }
+
+    private func emitStreamMethod(_ w: inout CodeWriter, method: BridgeDescriptor.Method, bridge: BridgeDescriptor) {
+        let element = method.returnType.swiftType.kotlinType
+        let observationType = bridge.observationTypeName(for: method)
+        let openArguments = ([bridge.wrappedName] + kotlinArguments(method) + ["arena"]).joined(separator: ", ")
+
+        w.indented { w in
+            w.line("fun \(method.name)(\(parameterList(method))): Flow<\(element)> =")
+            w.indented { w in
+                w.line("observationFlow(")
+                w.indented { w in
+                    w.line("open = { \(observationType).`init`(\(openArguments)) },")
+                    w.line("next = { observation ->")
+                    w.indented { w in
+                        w.line("withContext(Dispatchers.IO) {")
+                        w.indented { w in
+                            w.line("observation.next(arena)")
+                            w.indented { w in
+                                w.line(".await()")
+                                w.line(".orElse(null)")
+                            }
+                        }
+                        w.line("}")
+                    }
+                    w.line("},")
+                    w.line("cancel = { observation ->")
+                    w.indented { w in
+                        w.line("withContext(Dispatchers.IO) {")
+                        w.indented { w in
+                            w.line("observation.cancel()")
+                            w.indented { w in
+                                w.line(".await()")
+                            }
+                        }
+                        w.line("}")
+                    }
+                    w.line("},")
+                }
+                w.line(")")
+            }
+        }
+    }
+
+    // MARK: - Shared helpers
+
+    private func parameterList(_ method: BridgeDescriptor.Method) -> String {
+        let declarations = method.params.map { "\($0.name): \($0.swiftType.kotlinType)" }
+        return declarations.count > 2
+            ? "\n        " + declarations.joined(separator: ",\n        ") + ",\n    "
+            : declarations.joined(separator: ", ")
+    }
+
+    private func kotlinArguments(_ method: BridgeDescriptor.Method) -> [String] {
+        method.params.map { param in
+            if param.swiftType.isData {
+                "Data.fromByteArray(\(param.name), arena)"
+            } else if param.swiftType.isArray {
+                "\(param.name).toTypedArray()"
+            } else {
+                param.name
+            }
+        }
     }
 }
 

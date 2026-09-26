@@ -24,12 +24,20 @@ struct BridgeGenCommand: ParsableCommand {
     @Option(help: "Runtime package for the await() extension.")
     var runtimePackage: String = "dev.anicanon.swiftandroid.codegen.runtime"
 
+    @Option(help: "Directory for generated Swift stream observations. Its +AndroidStreams.swift files are replaced on every run.")
+    var swiftOutputDir: String?
+
     func run() throws {
         let sourceURL = URL(fileURLWithPath: sourceDir)
         let outputURL = URL(fileURLWithPath: outputDir)
 
         let analyzer = SwiftSourceAnalyzer()
         let bridges = try analyzer.analyze(directory: sourceURL)
+
+        if let swiftOutputDir {
+            let written = try SwiftStreamOutput.write(bridges, to: URL(fileURLWithPath: swiftOutputDir))
+            print("Generated \(written) stream observation file(s) in \(swiftOutputDir)")
+        }
 
         guard !bridges.isEmpty else {
             print("No @AndroidBridge annotations found in \(sourceDir)")

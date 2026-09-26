@@ -63,5 +63,10 @@ let package = Package(
             dependencies: ["BridgeGenCore"],
             path: "swift-macro/Tests/BridgeGenTests"
         ),
+        .testTarget(
+            name: "StreamObservationTests",
+            dependencies: ["SwiftAndroidCodegen"],
+            path: "swift-macro/Tests/StreamObservationTests"
+        ),
     ]
 )

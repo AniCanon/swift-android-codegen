@@ -57,5 +57,9 @@ let package = Package(
             name: "BridgeGenTests",
             dependencies: ["BridgeGenCore"]
         ),
+        .testTarget(
+            name: "StreamObservationTests",
+            dependencies: ["SwiftAndroidCodegen"]
+        ),
     ]
 )

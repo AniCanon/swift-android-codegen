@@ -35,6 +35,9 @@ public abstract class GenerateSwiftAndroidBridgesTask extends DefaultTask {
     @Optional @Input
     public abstract Property<String> getRuntimePackage();
 
+    @Optional @OutputDirectory
+    public abstract DirectoryProperty getSwiftOutputDir();
+
     @TaskAction
     public void generate() {
         var args = new java.util.ArrayList<String>();
@@ -53,6 +56,11 @@ public abstract class GenerateSwiftAndroidBridgesTask extends DefaultTask {
         if (getRuntimePackage().isPresent()) {
             args.add("--runtime-package");
             args.add(getRuntimePackage().get());
+        }
+
+        if (getSwiftOutputDir().isPresent()) {
+            args.add("--swift-output-dir");
+            args.add(getSwiftOutputDir().get().getAsFile().getAbsolutePath());
         }
 
         getExecOperations().exec(spec -> {

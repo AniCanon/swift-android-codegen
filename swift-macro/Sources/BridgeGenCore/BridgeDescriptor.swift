@@ -20,25 +20,45 @@ public struct BridgeDescriptor: Sendable {
         swiftTypeName.prefix(1).lowercased() + swiftTypeName.dropFirst()
     }
 
+    public var hasStreamMethods: Bool {
+        methods.contains { if case .stream = $0.kind { true } else { false } }
+    }
+
+    /// Name of the generated Swift class that serves `method` to Kotlin.
+    public func observationTypeName(for method: Method) -> String {
+        swiftTypeName + method.name.prefix(1).uppercased() + method.name.dropFirst() + "Observation"
+    }
+
     public struct Method: Sendable {
+        public enum Kind: Sendable, Equatable {
+            case async
+            /// `returnType` holds the stream's element type.
+            case stream(throwing: Bool)
+        }
+
         public let name: String
         public let params: [Param]
         public let returnType: ReturnType
+        public let kind: Kind
 
-        public init(name: String, params: [Param], returnType: ReturnType) {
+        public init(name: String, params: [Param], returnType: ReturnType, kind: Kind = .async) {
             self.name = name
             self.params = params
             self.returnType = returnType
+            self.kind = kind
         }
     }
 
     public struct Param: Sendable {
         public let name: String
         public let swiftType: SwiftType
+        /// External argument label; `nil` when the parameter is declared with `_`.
+        public let label: String?
 
-        public init(name: String, swiftType: SwiftType) {
+        public init(name: String, swiftType: SwiftType, label: String? = nil) {
             self.name = name
             self.swiftType = swiftType
+            self.label = label
         }
     }
 
@@ -76,6 +96,25 @@ public indirect enum SwiftType: Sendable {
     public var isOptional: Bool {
         if case .optional = self { return true }
         return false
+    }
+
+    public var swiftSpelling: String {
+        switch self {
+        case .simple(let name): name
+        case .member(let base, let name): "\(base).\(name)"
+        case .optional(let inner): "\(inner.swiftSpelling)?"
+        case .array(let element): "[\(element.swiftSpelling)]"
+        case .data: "Data"
+        }
+    }
+
+    /// Stream elements must be named Swift types jextract exports as classes.
+    var isBridgeableStreamElement: Bool {
+        switch self {
+        case .simple(let name): !Self.primitiveTypes.contains(name)
+        case .member: true
+        case .optional, .array, .data: false
+        }
     }
 
     /// Whether a returned value of this type wraps a Swift object that must be
