@@ -1,7 +1,7 @@
 # Bridging `AsyncStream` to Kotlin `Flow`
 
 Date: 2026-09-26
-Status: Draft, awaiting review
+Status: Approved; spike complete
 Target release: 0.4.0
 
 ## Goal
@@ -37,8 +37,8 @@ public protocol OutfitGenerationProgressUseCase: Sendable {
 
 - A bridged stream method is a non-`async` method returning `AsyncStream<T>` or
   `AsyncThrowingStream<T, Error>`.
-- `T` must already be exportable by jextract (public struct/class, or enum using the existing
-  discriminator pattern). If it is not, generation fails with an error naming `T`.
+- `T` must be a non-primitive named type jextract can export (public struct/class, or enum using the
+  existing discriminator pattern). Other element shapes are skipped with a warning.
 - iOS calls `observe(...)` directly. Nothing is generated for iOS.
 
 ## Android contract
@@ -55,48 +55,71 @@ class OutfitGenerationProgressUseCaseBridge(...) {
 - Collector cancellation, early termination (`first`, `take`) and normal completion all call the
   Swift `cancel()` exactly once.
 
+## Spike results (2026-09-26)
+
+- **jextract never expands macros.** swift-java 0.6.0 reads each file with `SwiftParser.Parser.parse`
+  and has no macro expansion path; it also reads inside `#if` blocks regardless of the condition. A
+  macro-emitted class would be invisible to it. **Route: committed Swift sources.**
+- **An unguarded stream requirement is safe.** With `observe(projectId:)` un-guarded on
+  `ProjectDetailHomeOverviewUseCase`, jextract logs `Failed to import: 'ProjectDetailHomeOverviewUseCase.observe(projectId:)'`
+  and skips only that member. Generated Java and Swift thunks were byte-identical to before, the
+  Android Swift build succeeded, and no protocol wrapper failed (`enableJavaCallbacks` is `false`).
+- **Initializers taking `any P` export.** jextract already exports e.g.
+  `DefaultSendShareLookUseCase.init(_T0 extends AssetClient, ...)`, so the factory is a plain
+  `public init(_ useCase: any P, ...)` on the generated class.
+
 ## Generated Swift
 
-Per stream method `m` on protocol `P`, guarded by `#if os(Android)`:
+Per protocol `P` with stream methods, one committed file `<P>+AndroidStreams.swift` in the tool-owned
+`swiftOutputDir`, guarded by `#if canImport(SwiftJava)` (compiled by the Android and JVM test-support
+builds, invisible to iOS/Xcode and the macOS Shared tests). Per stream method `m`:
 
-- `public final class <P><M>Observation` (e.g. `ProjectListUseCaseObserveObservation`) exposing `next() async [throws] -> T?` and
-  `cancel() async`.
-- A public factory taking the use case and the method's arguments, returning the Observation. Generated
-  code cannot add requirements to the author's protocol, so the factory is free-standing or on the
-  Observation type; the spike settles which form jextract exports.
-- One generic internal state holder backs every generated class. It consumes the stream inside its own
-  `Task`; `cancel()` cancels that task, so an in-flight `next()` returns and the stream's
-  `onTermination` runs. The current hand-written holders only drop the iterator, which guarantees
-  neither.
+```swift
+public final class <P><M>Observation: Sendable {
+    private let observation: StreamObservation<T>
 
-### Emission route (decided by spike)
+    public init(_ useCase: any P, <m's parameters>) {
+        self.observation = StreamObservation(useCase.m(<arguments>))
+    }
 
-- **(a) Macro.** `@AndroidBridge` becomes a peer/extension macro that emits the Observation and
-  factory. Valid only if jextract exports macro-expanded public declarations.
-- **(b) Committed sources.** A new `generateSwiftAndroidBridgeSources` task writes
-  `<swiftSourceDir>/Generated/*Observation.swift` and runs **before** `swiftBindingsBuild*`. Files are
-  committed, like the generated Kotlin.
+    public func next() async throws -> T? { try await self.observation.next() }   // throwing stream
+    public func next() async -> T? { try? await self.observation.next() }         // plain stream
 
-Spike: add a throwaway public macro-emitted class to Shared, run jextract, check for its
-`+SwiftJava.swift` output and Java class. Present → (a); absent → (b). The spike code is discarded;
-the result is recorded in this spec before implementation starts.
+    public func cancel() async { await self.observation.cancel() }
+}
+```
+
+`StreamObservation<Element>` is public, hand-written and unit-tested in the `SwiftAndroidCodegen`
+library (so Shared's pin moves to 0.4.0). It pumps the source inside its own `Task` into a relay
+stream; `cancel()` cancels the pump and finishes the relay, so an in-flight `next()` returns `nil` and
+the source's `onTermination` runs. The current hand-written holders only drop the iterator, which
+guarantees neither.
 
 ## Generator changes
 
-- `SwiftSourceAnalyzer`: recognise stream methods; add `BridgeDescriptor` method kind
-  `stream(element:, throwing:)`. Unsupported shapes keep today's warn-and-skip behaviour.
-- New Swift emitter for the Observation, factory and shared state holder (route a or b).
-- `KotlinBridgeEmitter`: for a stream method, emit a `fun` returning
-  `Flow<T> = flow { emitAll(observationFlow(obs::next, obs::cancel)) }`, creating the Observation via the
-  factory with `DEFAULT_SWIFT_JAVA_AUTO_ARENA` (never `ofAuto`).
-- Runtime: move `observationFlow` into `dev.anicanon.swiftandroid.codegen.runtime`.
+- `SwiftSourceAnalyzer`: recognise non-async methods returning `AsyncStream<T>` or
+  `AsyncThrowingStream<T, Error>`; `BridgeDescriptor.Method` gains `kind` (`.async` or
+  `.stream(throwing:)`) and `Param` gains its external `label`. The element must be a non-primitive
+  named type; `Data`, arrays, optionals and primitives are skipped with a warning like every other
+  unsupported shape. An element type jextract cannot export surfaces as a Kotlin compile error on the
+  generated bridge naming the type.
+- `SwiftStreamEmitter`: emits `<P>+AndroidStreams.swift`.
+- `KotlinBridgeEmitter`: for a stream method, emits a cold `fun m(...): Flow<T>` that constructs
+  `<P><M>Observation.`init`(wrapped, args..., arena)` and feeds `observationFlow` with `next(arena)`
+  and `cancel()`, each inside `withContext(Dispatchers.IO)`. Arena is `DEFAULT_SWIFT_JAVA_AUTO_ARENA`.
+- CLI: optional `--swift-output-dir`. When given, the directory is owned by the tool: its `*.swift`
+  files are deleted and regenerated each run, so removed streams leave no orphans. One run writes both
+  the Swift and the Kotlin; neither depends on jextract output.
+- Gradle: optional `swiftOutputDir` on the extension and task. The app orders `swiftBindingsBuild*`
+  after `generateSwiftAndroidBridges` inside `generateBridges`.
+- Runtime: `observationFlow` moves into `dev.anicanon.swiftandroid.codegen.runtime`, with JVM tests.
 - README: a "Streams" section with the author and Android contracts.
 - Version 0.4.0, published to GitHub Packages.
 
 ## Adoption in anicanon-companion (proof)
 
 - `ProjectListUseCase`, `ProjectDetailHomeOverviewUseCase`, `ProjectDetailGalleryOverviewUseCase`:
-  expose only `observe(...)`; delete `makeObservation`, their Observation classes, their state actors
+  expose only `observe(...)`, un-guarded; delete `makeObservation`, their Observation classes, their state actors
   and the `#if !os(Android)` guards.
 - Android: delete `core/runtime/ObservationFlow.kt` and the three `*Overviews.kt` extensions; callers
   use the generated `Flow`.
@@ -111,13 +134,13 @@ the result is recorded in this spec before implementation starts.
 - Runtime: `observationFlow` calls `cancel()` exactly once on completion, collector cancellation,
   early termination and error.
 - App, once per platform when that platform is done: Shared tests for the three use cases; Android
-  ViewModel tests for project list, home and gallery. Manual emulator run: the three screens load and
-  update, and leaving a screen logs the stream's `onTermination` via `os.Logger`.
+  ViewModel tests for project list, home and gallery; an iOS build. Manual emulator run: the three
+  screens load and update live. Stream termination on cancel is covered by the `StreamObservation`
+  unit tests (`os` is unavailable to Shared on Android, so it is not logged there).
 
 ## Risks
 
-- jextract ignores macro output → route (b).
-- Element type not exportable → generation error naming the type.
+- Element type not exportable by jextract → Kotlin compile error on the generated bridge naming it.
 - jextract output churn → review the generated diff; do not work from a worktree under `/tmp`.
 
 ## Out of scope
