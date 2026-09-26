@@ -69,4 +69,57 @@ struct StreamObservationTests {
 
         #expect(try await observation.next() == nil)
     }
+
+    /// Lets a test wait until a concurrently-running iterator has actually started, so
+    /// cancellation lands while the source is live rather than before it ran at all.
+    private actor SpinGate {
+        private var started = false
+
+        func markStarted() {
+            self.started = true
+        }
+
+        func waitUntilStarted() async {
+            while !self.started {
+                await Task.yield()
+            }
+        }
+    }
+
+    /// A source whose iterator spins on `Task.isCancelled` and throws `CancellationError` the
+    /// moment cancellation is observed, with no further suspension — reproduces sources built on
+    /// `Task.checkCancellation()`, racing the source's own failure against `cancel()`'s resolution.
+    private struct SpinningSequence: AsyncSequence, Sendable {
+        let gate: SpinGate
+
+        struct Iterator: AsyncIteratorProtocol {
+            let gate: SpinGate
+
+            func next() async throws -> Int? {
+                await self.gate.markStarted()
+                while !Task.isCancelled {
+                    await Task.yield()
+                }
+                throw CancellationError()
+            }
+        }
+
+        func makeAsyncIterator() -> Iterator {
+            Iterator(gate: self.gate)
+        }
+    }
+
+    @Test("Cancel resolves a waiting next with nil even when the source throws CancellationError")
+    func cancelResolvesWaitingNextDespiteSourceCancellationError() async throws {
+        for _ in 0..<50 {
+            let gate = SpinGate()
+            let observation = StreamObservation(SpinningSequence(gate: gate))
+
+            async let pending = observation.next()
+            await gate.waitUntilStarted()
+            await observation.cancel()
+
+            #expect(try await pending == nil)
+        }
+    }
 }

@@ -21,9 +21,9 @@ public final class StreamObservation<Element: Sendable>: Sendable {
     }
 
     deinit {
-        self.pump.cancel()
         let relay = self.relay
         Task { await relay.cancel() }
+        self.pump.cancel()
     }
 
     /// `nil` once the source has finished or the observation was cancelled.
@@ -31,10 +31,11 @@ public final class StreamObservation<Element: Sendable>: Sendable {
         try await self.relay.next()
     }
 
-    /// Stops the source, drops undelivered elements and ends any waiting `next()` with `nil`.
+    /// Ends any waiting `next()` with `nil` first, then stops the source so a late failure from
+    /// cancellation cannot race the waiter's resolution.
     public func cancel() async {
-        self.pump.cancel()
         await self.relay.cancel()
+        self.pump.cancel()
     }
 }
 
