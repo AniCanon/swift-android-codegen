@@ -246,7 +246,8 @@ swift run bridge-gen \
     --source-dir /path/to/swift/sources \
     --output-dir /path/to/kotlin/output \
     --bridge-package com.example.bridge.generated \
-    --source-package com.example.shared
+    --source-package com.example.shared \
+    --swift-output-dir /path/to/swift/generated
 ```
 
 ## Project structure

@@ -34,6 +34,11 @@ struct BridgeGenCommand: ParsableCommand {
         let analyzer = SwiftSourceAnalyzer()
         let bridges = try analyzer.analyze(directory: sourceURL)
 
+        if let swiftOutputDir {
+            let written = try SwiftStreamOutput.write(bridges, to: URL(fileURLWithPath: swiftOutputDir))
+            print("Generated \(written) stream observation file(s) in \(swiftOutputDir)")
+        }
+
         guard !bridges.isEmpty else {
             print("No @AndroidBridge annotations found in \(sourceDir)")
             return
@@ -59,10 +64,5 @@ struct BridgeGenCommand: ParsableCommand {
         }
 
         print("Generated \(bridges.count) bridge(s) in \(bridgeDir.path)")
-
-        if let swiftOutputDir {
-            let written = try SwiftStreamOutput.write(bridges, to: URL(fileURLWithPath: swiftOutputDir))
-            print("Generated \(written) stream observation file(s) in \(swiftOutputDir)")
-        }
     }
 }
