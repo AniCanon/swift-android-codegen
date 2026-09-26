@@ -83,7 +83,7 @@ In your `app/build.gradle.kts`:
 
 ```kotlin
 plugins {
-    id("dev.anicanon.swift-android-codegen") version "0.2.0"
+    id("dev.anicanon.swift-android-codegen") version "0.4.0"
 }
 
 // Generated sources are committed — not ephemeral build output
@@ -95,6 +95,8 @@ swiftAndroidCodegen {
     outputDir.set(swiftAndroidBridgesDir)
     bridgePackage.set("com.example.bridge.generated")
     sourcePackage.set("com.example.shared")
+    // Owned by the tool: its +AndroidStreams.swift files are replaced on every run.
+    swiftOutputDir.set(file("../Shared/Sources/MySharedCode/Generated/AndroidStreams"))
 }
 
 android {
@@ -118,11 +120,11 @@ Generated Kotlin files are written to `src/generated/bridges/` and committed to 
 
 ```kotlin
 dependencies {
-    implementation("dev.anicanon.swiftandroid.codegen:runtime:0.2.0")
+    implementation("dev.anicanon.swiftandroid.codegen:runtime:0.4.0")
 }
 ```
 
-The runtime is a single file — a `CompletableFuture<T>.await()` extension that bridges Java futures to Kotlin coroutines with cancellation support.
+The runtime provides `CompletableFuture<T>.await()` and `observationFlow`, which backs generated stream methods.
 
 ## Usage
 
@@ -173,6 +175,27 @@ val bridge = ProjectListUseCaseBridge(useCase)
 val overview = bridge.fetch() // suspend fun, use from any coroutine scope
 ```
 
+## Streams
+
+A non-async method returning `AsyncStream<T>` or `AsyncThrowingStream<T, Error>` becomes a cold Kotlin `Flow<T>`:
+
+```swift
+@AndroidBridge("HomeUseCaseBridge")
+public protocol HomeUseCase: Sendable {
+    func observe(projectId: String) -> AsyncStream<HomeOverview>
+}
+```
+
+```kotlin
+bridge.observe(projectId).collect { overview -> /* ... */ }
+```
+
+- `bridge-gen` writes `HomeUseCase+AndroidStreams.swift` (a `HomeUseCaseObserveObservation` class) into `swiftOutputDir`. Commit it, and add that directory to jextract's `swiftFilterInclude`. Run `generateSwiftAndroidBridges` before jextract.
+- The stream requirement needs no `#if` guard: jextract skips it with a warning and exports the generated class instead.
+- Collection starts the Swift stream; completion, `first()`/`take()` and collector cancellation all stop it, which runs its `onTermination`.
+- A throwing stream's error fails the flow. `T` must be a named type jextract exports; `String`, primitives, arrays, optionals and `Data` are skipped with a warning.
+- Generated Swift is wrapped in `#if canImport(SwiftJava)`, so iOS builds never compile it.
+
 ## Type mappings
 
 | Swift | Kotlin |
@@ -186,6 +209,7 @@ val overview = bridge.fetch() // suspend fun, use from any coroutine scope
 | `[Type]` | `List<Type>` |
 | `Type?` | `Type?` |
 | `Void` / no return | Unit (omitted) |
+| `AsyncStream<T>` / `AsyncThrowingStream<T, Error>` | `Flow<T>` |
 
 `Data` parameters are automatically converted via `Data.fromByteArray()`. Array parameters are converted with `.toTypedArray()` and array returns with `.toList()`.
 
@@ -196,6 +220,7 @@ The `bridge-gen` CLI scans for types annotated with `@AndroidBridge` and extract
 - **The annotated type** — becomes the bridge's single constructor parameter.
 - **Async methods** — become `suspend fun` on the bridge: every async requirement of a protocol, and the `public` async methods of a class or struct. Synchronous methods are ignored.
 - **Return types** — mapped to Kotlin equivalents. Void methods omit the return type.
+- **Stream methods** — non-async methods returning `AsyncStream`/`AsyncThrowingStream` become `Flow`-returning functions.
 
 Types without `@AndroidBridge` are ignored. The `@AndroidBridge` macro itself is a no-op peer macro — it produces no code at compile time and exists purely as a marker for the code generator.
 
@@ -209,6 +234,7 @@ Types without `@AndroidBridge` are ignored. The `@AndroidBridge` macro itself is
 | `bridgePackage` | Yes | Kotlin package for generated bridge classes |
 | `sourcePackage` | Yes | Kotlin package where swift-java generates its types |
 | `runtimePackage` | No | Package for the `await()` extension (default: `dev.anicanon.swiftandroid.codegen.runtime`) |
+| `swiftOutputDir` | No | Directory for generated Swift stream observations; its `+AndroidStreams.swift` files are replaced on every run |
 
 ## CLI usage
 

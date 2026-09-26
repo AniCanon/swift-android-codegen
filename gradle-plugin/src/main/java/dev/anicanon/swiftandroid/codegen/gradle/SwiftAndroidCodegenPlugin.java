@@ -22,6 +22,7 @@ public final class SwiftAndroidCodegenPlugin implements Plugin<Project> {
                     task.getBridgePackage().set(extension.getBridgePackage());
                     task.getSourcePackage().set(extension.getSourcePackage());
                     task.getRuntimePackage().set(extension.getRuntimePackage());
+                    task.getSwiftOutputDir().set(extension.getSwiftOutputDir());
                 }
         );
     }

@@ -24,6 +24,9 @@ public abstract class SwiftAndroidCodegenExtension {
     /** Runtime package for the await() extension. */
     public abstract Property<String> getRuntimePackage();
 
+    /** Directory for generated Swift stream observations; bridge-gen replaces its +AndroidStreams.swift files. */
+    public abstract DirectoryProperty getSwiftOutputDir();
+
     public SwiftAndroidCodegenExtension(ObjectFactory objects) {
         getRuntimePackage().convention("dev.anicanon.swiftandroid.codegen.runtime");
     }
