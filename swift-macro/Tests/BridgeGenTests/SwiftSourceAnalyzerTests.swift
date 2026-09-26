@@ -208,7 +208,8 @@ struct SwiftSourceAnalyzerTests {
         let bridge = bridges[0]
         #expect(bridge.swiftTypeName == "ProjectListUseCase")
         #expect(bridge.wrappedName == "projectListUseCase")
-        #expect(bridge.methods.map(\.name) == ["fetch", "followProject"])
+        #expect(bridge.methods.map(\.name) == ["fetch", "followProject", "observe"])
+        #expect(bridge.methods[2].kind == .stream(throwing: true))
     }
 
     @Test("Extracts class bridge without a public initializer")

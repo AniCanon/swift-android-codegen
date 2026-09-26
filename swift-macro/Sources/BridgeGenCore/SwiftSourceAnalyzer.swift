@@ -67,7 +67,7 @@ private final class BridgeVisitor: SyntaxVisitor {
 
         let methods = extractMethods(from: members, requiresPublic: requiresPublic)
         guard !methods.isEmpty else {
-            print("warning: @AndroidBridge(\"\(bridgeName)\") on '\(name.text)' has no public async methods — skipping")
+            print("warning: @AndroidBridge(\"\(bridgeName)\") on '\(name.text)' has no public async or stream methods — skipping")
             return nil
         }
 
@@ -103,14 +103,31 @@ private final class BridgeVisitor: SyntaxVisitor {
             let isPublic = funcDecl.modifiers.contains { $0.name.text == "public" }
             guard isPublic || !requiresPublic else { continue }
 
-            let isAsync = funcDecl.signature.effectSpecifiers?.asyncSpecifier != nil
-            guard isAsync else { continue }
-
             let methodName = funcDecl.name.text
             let params = extractMethodParams(from: funcDecl.signature.parameterClause)
-            let returnType = extractReturnType(from: funcDecl.signature.returnClause)
+            let effects = funcDecl.signature.effectSpecifiers
 
-            methods.append(.init(name: methodName, params: params, returnType: returnType))
+            if effects?.asyncSpecifier != nil {
+                let returnType = extractReturnType(from: funcDecl.signature.returnClause)
+                methods.append(.init(name: methodName, params: params, returnType: returnType))
+                continue
+            }
+
+            guard effects?.throwsClause == nil,
+                  let stream = extractStream(from: funcDecl.signature.returnClause)
+            else { continue }
+
+            guard stream.element.isBridgeableStreamElement else {
+                print("warning: '\(methodName)' streams '\(stream.element.swiftSpelling)', which cannot be bridged — skipping")
+                continue
+            }
+
+            methods.append(.init(
+                name: methodName,
+                params: params,
+                returnType: .init(swiftType: stream.element, isVoid: false),
+                kind: .stream(throwing: stream.throwing)
+            ))
         }
 
         return methods
@@ -119,8 +136,30 @@ private final class BridgeVisitor: SyntaxVisitor {
     private func extractMethodParams(from clause: FunctionParameterClauseSyntax) -> [BridgeDescriptor.Param] {
         clause.parameters.map { param in
             let name = (param.secondName ?? param.firstName).text
-            let swiftType = parseSwiftType(param.type)
-            return .init(name: name, swiftType: swiftType)
+            let label = param.firstName.text == "_" ? nil : param.firstName.text
+            return .init(name: name, swiftType: parseSwiftType(param.type), label: label)
+        }
+    }
+
+    private func extractStream(from returnClause: ReturnClauseSyntax?) -> (element: SwiftType, throwing: Bool)? {
+        guard let identifier = returnClause?.type.as(IdentifierTypeSyntax.self),
+              let arguments = identifier.genericArgumentClause?.arguments
+        else { return nil }
+
+        let types = arguments.compactMap { argument -> TypeSyntax? in
+            if case .type(let type) = argument.argument { return type }
+            return nil
+        }
+
+        switch identifier.name.text {
+        case "AsyncStream" where types.count == 1:
+            return (parseSwiftType(types[0]), false)
+        case "AsyncThrowingStream" where types.count == 2:
+            let failure = types[1].trimmedDescription
+            guard failure == "Error" || failure == "any Error" else { return nil }
+            return (parseSwiftType(types[0]), true)
+        default:
+            return nil
         }
     }
 
