@@ -26,4 +26,10 @@ dependencies {
     // block in the root build) — replaces the per-developer 1.0-SNAPSHOT
     // publishToMavenLocal bootstrap so fresh clones and CI resolve it.
     compileOnly("org.swift.swiftkit:swiftkit-core:1.0-0bdba49")
+    testImplementation(kotlin("test"))
+    testImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.1")
+}
+
+tasks.test {
+    useJUnitPlatform()
 }
