@@ -571,7 +571,7 @@ git commit -m "feat: detect AsyncStream methods on bridged types"
 - Consumes: `Method.kind`, `Param.label`, `SwiftType.swiftSpelling`, `BridgeDescriptor.observationTypeName(for:)`, `hasStreamMethods` (Task 2).
 - Produces:
   - `public struct SwiftStreamEmitter { public init(); public func emit(_ bridge: BridgeDescriptor) -> String?; public static func fileName(for bridge: BridgeDescriptor) -> String }` — `nil` when the bridge has no stream methods; file name `<swiftTypeName>+AndroidStreams.swift`.
-  - `public enum SwiftStreamOutput { public static func write(_ bridges: [BridgeDescriptor], to directory: URL) throws -> Int }` — creates the directory, deletes every `*.swift` already in it, writes one file per bridge with streams, returns the count written.
+  - `public enum SwiftStreamOutput { public static func write(_ bridges: [BridgeDescriptor], to directory: URL) throws -> Int }` — creates the directory, deletes every `*+AndroidStreams.swift` already in it (never other files), writes one file per bridge with streams, returns the count written.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -675,14 +675,16 @@ struct SwiftStreamEmitterTests {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let stale = directory.appendingPathComponent("Old+AndroidStreams.swift")
         try "stale".write(to: stale, atomically: true, encoding: .utf8)
+        let unrelated = directory.appendingPathComponent("Handwritten.swift")
+        try "keep".write(to: unrelated, atomically: true, encoding: .utf8)
 
         let plain = BridgeDescriptor(bridgeName: "B", swiftTypeName: "P", methods: [.init(name: "fetch", params: [], returnType: .void)])
         let written = try SwiftStreamOutput.write([home, plain], to: directory)
 
         #expect(written == 1)
         #expect(!FileManager.default.fileExists(atPath: stale.path))
-        let files = try FileManager.default.contentsOfDirectory(atPath: directory.path)
-        #expect(files == ["HomeUseCase+AndroidStreams.swift"])
+        let files = try FileManager.default.contentsOfDirectory(atPath: directory.path).sorted()
+        #expect(files == ["Handwritten.swift", "HomeUseCase+AndroidStreams.swift"])
     }
 }
 ```
@@ -774,12 +776,14 @@ public struct SwiftStreamEmitter {
 
 /// Writes generated stream sources into a directory the tool owns.
 public enum SwiftStreamOutput {
-    /// Deletes every `.swift` file in `directory`, then writes one file per bridge with streams.
+    static let suffix = "+AndroidStreams.swift"
+
+    /// Deletes every `+AndroidStreams.swift` file in `directory`, then writes one file per bridge with streams.
     @discardableResult
     public static func write(_ bridges: [BridgeDescriptor], to directory: URL) throws -> Int {
         let fm = FileManager.default
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
-        for name in try fm.contentsOfDirectory(atPath: directory.path) where name.hasSuffix(".swift") {
+        for name in try fm.contentsOfDirectory(atPath: directory.path) where name.hasSuffix(Self.suffix) {
             try fm.removeItem(at: directory.appendingPathComponent(name))
         }
 
@@ -1178,7 +1182,7 @@ git commit -m "feat: bridge streams to Kotlin Flow"
 In `BridgeGenCommand`, add the option:
 
 ```swift
-    @Option(help: "Directory for generated Swift stream observations. Owned by bridge-gen: its .swift files are replaced on every run.")
+    @Option(help: "Directory for generated Swift stream observations. Its +AndroidStreams.swift files are replaced on every run.")
     var swiftOutputDir: String?
 ```
 
@@ -1216,7 +1220,7 @@ Expected: both files print; the Swift file contains `HomeUseCaseObserveObservati
 `SwiftAndroidCodegenExtension.java` — add:
 
 ```java
-    /** Directory for generated Swift stream observations; bridge-gen owns and replaces its .swift files. */
+    /** Directory for generated Swift stream observations; bridge-gen replaces its +AndroidStreams.swift files. */
     public abstract DirectoryProperty getSwiftOutputDir();
 ```
 
@@ -1424,12 +1428,13 @@ cd ~/Projects/anicanon-companion/Android && ./gradlew :app:assembleDebug
 ./gradlew :app:checkFileLength
 ```
 
-Run `assembleDebug` as its own command, separate from `generateBridges`. Expected: BUILD SUCCESSFUL for both.
+Run `assembleDebug` as its own command, separate from `generateBridges`. Expected: BUILD SUCCESSFUL for both. If Gradle reports an implicit dependency between `generateSwiftAndroidBridges` and `swiftBindingsBuild*`, replace the `mustRunAfter` block from Task 6 with `tasks.named("generateBridges") { ... }`-scoped ordering via `dependsOn` so only `generateBridges` triggers generation.
 
 - [ ] **Step 8: Commit (controller)**
 
 ```bash
 cd ~/Projects/anicanon-companion
+git status --short Shared/Package.resolved   # the local codegen path can rewrite it; restore with git checkout -- Shared/Package.resolved
 git add -A Shared/Sources Android/app
 git diff --cached --stat
 git diff --cached -- Shared/Sources/AnicanonShared/Generated
@@ -1444,13 +1449,13 @@ git commit -m "refactor(shared): generate stream observations for project list, 
 
 - [ ] **Step 1: Shared tests (macOS)**
 
-Run: `cd ~/Projects/anicanon-companion/Shared && SWIFT_ANDROID_CODEGEN_PATH=$HOME/Projects/swift-android-codegen swift test --filter "ProjectList|ProjectDetailHome|ProjectDetailGallery"`
-Expected: PASS. (Generated files are excluded on macOS by `#if canImport(SwiftJava)`.)
+Run: `cd ~/Projects/anicanon-companion/Shared && SWIFT_ANDROID_CODEGEN_PATH=$HOME/Projects/swift-android-codegen swift test --filter "ProjectRemoteExistenceTests|ClientStubTests"`
+Expected: PASS. These are the suites that exercise the three use cases and their stubs; generated files are excluded on macOS by `#if canImport(SwiftJava)`.
 
 - [ ] **Step 2: Android unit tests, scoped**
 
-Run: `cd ~/Projects/anicanon-companion/Android && SWIFT_ANDROID_CODEGEN_PATH=$HOME/Projects/swift-android-codegen ./gradlew :app:testDebugUnitTest --tests '*ProjectsViewModel*' --tests '*ProjectDetailHome*' --tests '*ProjectDetailGallery*'`
-Expected: PASS. This also builds the JVM test-support library, which compiles the generated observations.
+Run: `cd ~/Projects/anicanon-companion/Android && SWIFT_ANDROID_CODEGEN_PATH=$HOME/Projects/swift-android-codegen ./gradlew :app:testDebugUnitTest --tests '*ProjectsViewModelTest' --tests '*ProjectDetailHomeViewModelTest'`
+Expected: PASS. Gallery has no ViewModel test; it is covered by the build and the manual check. This also builds the JVM test-support library, which compiles the generated observations.
 
 - [ ] **Step 3: iOS build**
 

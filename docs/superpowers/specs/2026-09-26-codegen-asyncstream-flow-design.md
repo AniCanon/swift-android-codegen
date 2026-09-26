@@ -107,7 +107,7 @@ guarantees neither.
 - `KotlinBridgeEmitter`: for a stream method, emits a cold `fun m(...): Flow<T>` that constructs
   `<P><M>Observation.`init`(wrapped, args..., arena)` and feeds `observationFlow` with `next(arena)`
   and `cancel()`, each inside `withContext(Dispatchers.IO)`. Arena is `DEFAULT_SWIFT_JAVA_AUTO_ARENA`.
-- CLI: optional `--swift-output-dir`. When given, the directory is owned by the tool: its `*.swift`
+- CLI: optional `--swift-output-dir`. When given, its `*+AndroidStreams.swift`
   files are deleted and regenerated each run, so removed streams leave no orphans. One run writes both
   the Swift and the Kotlin; neither depends on jextract output.
 - Gradle: optional `swiftOutputDir` on the extension and task. The app orders `swiftBindingsBuild*`
