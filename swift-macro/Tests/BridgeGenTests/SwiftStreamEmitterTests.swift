@@ -20,7 +20,7 @@ struct SwiftStreamEmitterTests {
         ]
     )
 
-    @Test("Emits a guarded Observation for a plain stream")
+    @Test("Emits an Observation for a plain stream")
     func plainStream() throws {
         let output = try #require(emitter.emit(home))
 
