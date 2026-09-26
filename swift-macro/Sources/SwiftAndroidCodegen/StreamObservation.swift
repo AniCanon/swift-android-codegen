@@ -69,9 +69,14 @@ private actor StreamObservationRelay<Element: Sendable> {
         }
     }
 
+    /// Clears any undelivered elements or pending source failure unconditionally, so a later
+    /// `next()` reads as finished even if `finish(_:)` had already recorded a failure.
     func cancel() {
         self.buffer.removeAll()
-        self.finish(.success(()))
+        self.ending = .success(())
+        guard let waiter = self.waiter else { return }
+        self.waiter = nil
+        waiter.resume(returning: nil)
     }
 
     func next() async throws -> Element? {

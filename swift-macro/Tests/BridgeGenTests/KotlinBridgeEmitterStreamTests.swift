@@ -32,32 +32,29 @@ struct KotlinBridgeEmitterStreamTests {
         let output = emitter.emit(bridge)
 
         #expect(output.contains("import kotlinx.coroutines.flow.Flow"))
-        #expect(output.contains("import kotlinx.coroutines.flow.emitAll"))
-        #expect(output.contains("import kotlinx.coroutines.flow.flow"))
+        #expect(!output.contains("import kotlinx.coroutines.flow.flow"))
+        #expect(!output.contains("import kotlinx.coroutines.flow.emitAll"))
         #expect(output.contains("import com.example.runtime.observationFlow"))
         #expect(output.contains("import com.example.source.HomeUseCaseObserveObservation"))
         #expect(output.contains("import com.example.source.HomeOverview"))
         #expect(output.contains("""
-            fun observe(projectId: String): Flow<HomeOverview> = flow {
-                val observation = HomeUseCaseObserveObservation.`init`(homeUseCase, projectId, arena)
-                emitAll(
-                    observationFlow(
-                        next = {
-                            withContext(Dispatchers.IO) {
-                                observation.next(arena)
-                                    .await()
-                                    .orElse(null)
-                            }
-                        },
-                        cancel = {
-                            withContext(Dispatchers.IO) {
-                                observation.cancel()
-                                    .await()
-                            }
-                        },
-                    ),
+            fun observe(projectId: String): Flow<HomeOverview> =
+                observationFlow(
+                    open = { HomeUseCaseObserveObservation.`init`(homeUseCase, projectId, arena) },
+                    next = { observation ->
+                        withContext(Dispatchers.IO) {
+                            observation.next(arena)
+                                .await()
+                                .orElse(null)
+                        }
+                    },
+                    cancel = { observation ->
+                        withContext(Dispatchers.IO) {
+                            observation.cancel()
+                                .await()
+                        }
+                    },
                 )
-            }
         """))
         #expect(output.contains("suspend fun fetch(projectId: String): HomeOverview ="))
     }

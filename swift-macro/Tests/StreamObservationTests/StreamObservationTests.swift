@@ -109,6 +109,41 @@ struct StreamObservationTests {
         }
     }
 
+    /// A source that fails on its first `next()` call, signalling `gate` right before throwing so a
+    /// test can wait until the pump task has actually recorded the failure.
+    private struct FailingSequence: AsyncSequence, Sendable {
+        let gate: SpinGate
+
+        struct Iterator: AsyncIteratorProtocol {
+            let gate: SpinGate
+            var thrown = false
+
+            mutating func next() async throws -> Int? {
+                guard !self.thrown else { return nil }
+                self.thrown = true
+                await self.gate.markStarted()
+                throw Boom()
+            }
+        }
+
+        func makeAsyncIterator() -> Iterator {
+            Iterator(gate: self.gate)
+        }
+    }
+
+    @Test("Cancel after an undelivered source failure still resolves next with nil")
+    func cancelAfterUndeliveredFailureReturnsNil() async throws {
+        let gate = SpinGate()
+        let observation = StreamObservation(FailingSequence(gate: gate))
+
+        await gate.waitUntilStarted()
+        for _ in 0..<50 { await Task.yield() }
+
+        await observation.cancel()
+
+        #expect(try await observation.next() == nil)
+    }
+
     @Test("Cancel resolves a waiting next with nil even when the source throws CancellationError")
     func cancelResolvesWaitingNextDespiteSourceCancellationError() async throws {
         for _ in 0..<50 {

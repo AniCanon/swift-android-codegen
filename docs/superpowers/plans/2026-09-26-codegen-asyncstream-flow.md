@@ -1464,7 +1464,7 @@ Expected: BUILD SUCCEEDED. iOS still resolves codegen 0.3.0 and never compiles t
 
 - [ ] **Step 4: Manual emulator check**
 
-Install `assembleDebug` on the emulator; open the projects list, a project's home and its gallery. Each loads and updates when data changes (e.g. follow/unfollow on the list). Navigate away and back without crashes.
+Install `assembleDebug` on the emulator; open the projects list, a project's home and its gallery. Each loads and updates when data changes (e.g. follow/unfollow on the list). For each of the three screens, leave it (back or tab away) and re-enter it, confirming it still loads and updates without crashes.
 
 - [ ] **Step 5: Report**
 
@@ -1472,15 +1472,22 @@ Record the four results (commands + outcome) for the PR bodies.
 
 ---
 
-### Task 9: Release 0.4.0 and pin it (both repos; ask the user before each outward step)
+### Task 9: Release 0.4.0 and pin it (both repos; ask the user before each outward step, in this order)
 
-- [ ] **Step 1: Codegen PR** — ask the user, then push `feature/asyncstream-flow-bridges` and open `[FEATURE] Bridge AsyncStream to Kotlin Flow` with Summary + Verification (Task 5 Step 5 output).
-- [ ] **Step 2: Release** — after merge and with the user's go-ahead: tag `0.4.0` on `main` and publish to GitHub Packages from this machine (`./gradlew publish`). If the publish half-fails with a 409 (jar without POM), delete that version with `gpr.key` and re-run; do not burn a version number.
-- [ ] **Step 3: Pin in the app**
+The steps below are strictly ordered: the codegen PR merges and 0.4.0 is tagged and fully published
+*before* any app-repo pin commit is made, and the app PR opens only after the app has been verified
+against the published 0.4.0 with no local override. Do not reorder — an app pin against an unpublished
+or partially-published version cannot resolve.
+
+- [ ] **Step 1: Codegen PR merged** — ask the user, then push `feature/asyncstream-flow-bridges` and open `[FEATURE] Bridge AsyncStream to Kotlin Flow` with Summary + Verification (Task 5 Step 5 output). Ask the user before merging.
+- [ ] **Step 2: Tag and publish 0.4.0 (all three artifacts)** — after merge and with the user's go-ahead: tag `0.4.0` on `main` and publish to GitHub Packages from this machine (`./gradlew publish`). This must publish all of: the runtime, the Gradle plugin, and the plugin marker artifact — all three are consumed on the Android/Gradle side (`libs.versions.toml` resolves the runtime coordinate directly, `build.gradle.kts`'s `id("dev.anicanon.swift-android-codegen")` resolves the plugin via its marker), so a partial publish leaves Android's Gradle build unable to resolve 0.4.0 even though `Shared/Package.swift` (SwiftPM, resolving the git tag, not Maven) is unaffected. If the publish half-fails with a 409 (jar without POM), delete that version with `gpr.key` and re-run; do not burn a version number.
+- [ ] **Step 3: Pin in the app (one commit, only after Step 2 is confirmed published)**
   - `Shared/Package.swift`: `let swiftAndroidCodegenVersion = Version(0, 4, 0)`
-  - `Android/gradle/libs.versions.toml`: `swiftAndroidCodegen = "0.4.0"`
-  - `Android/app/build.gradle.kts`: `id("dev.anicanon.swift-android-codegen") version "0.4.0"`
-  - Resolve: `cd Shared && swift package update swift-android-codegen`; commit the resolved file if it is tracked.
-  - Verify without the env override: `unset SWIFT_ANDROID_CODEGEN_PATH`, then `./gradlew :app:assembleDebug` and the iOS build from Task 8 Step 3.
-  - Commit: `build: pin swift-android-codegen 0.4.0`.
-- [ ] **Step 4: App PR** — ask the user, then push `feature/generated-stream-observations` and open `[FEATURE] Generated stream observations` with Summary, Verification (Task 8 results) and "Media: Not attached" (no UI change).
+  - `Shared/Package.resolved`: re-resolved, not hand-edited (see below).
+  - `iOS/Companion.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved`: re-resolved, not hand-edited (see below).
+  - `Android/gradle/libs.versions.toml`: `swiftAndroidCodegen = "0.4.0"` (currently `0.2.4`).
+  - `Android/app/build.gradle.kts`: `id("dev.anicanon.swift-android-codegen") version "0.4.0"` (currently `0.3.0`).
+  - Resolve, don't hand-edit the lockfiles: `cd Shared && swift package update swift-android-codegen` (updates `Shared/Package.resolved`); open the Xcode project (or `xcodebuild -resolvePackageDependencies`) so it re-resolves `iOS/Companion.xcodeproj/.../Package.resolved` too.
+  - All five files land in a single commit: `build: pin swift-android-codegen 0.4.0`.
+- [ ] **Step 4: Verify the pin with no local override** — `unset SWIFT_ANDROID_CODEGEN_PATH`, then `cd Android && ./gradlew :app:assembleDebug` and the iOS build from Task 8 Step 3. Both must succeed resolving 0.4.0 from GitHub Packages alone, with no `SWIFT_ANDROID_CODEGEN_PATH` pointing at a local checkout.
+- [ ] **Step 5: App PR** — only once Step 4 passes: ask the user, then push `feature/generated-stream-observations` and open `[FEATURE] Generated stream observations` with Summary, Verification (Task 8 results plus Step 4 of this task) and "Media: Not attached" (no UI change). Ask the user before merging.

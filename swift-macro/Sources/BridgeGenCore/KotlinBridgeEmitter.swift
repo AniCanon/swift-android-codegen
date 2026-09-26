@@ -83,8 +83,6 @@ public struct KotlinBridgeEmitter {
 
         if bridge.hasStreamMethods {
             imports.append("kotlinx.coroutines.flow.Flow")
-            imports.append("kotlinx.coroutines.flow.emitAll")
-            imports.append("kotlinx.coroutines.flow.flow")
             imports.append(config.runtimePackage + ".observationFlow")
             for method in bridge.methods where method.kind != .async {
                 imports.append(config.sourcePackage + "." + bridge.observationTypeName(for: method))
@@ -156,43 +154,42 @@ public struct KotlinBridgeEmitter {
     private func emitStreamMethod(_ w: inout CodeWriter, method: BridgeDescriptor.Method, bridge: BridgeDescriptor) {
         let element = method.returnType.swiftType.kotlinType
         let observationType = bridge.observationTypeName(for: method)
-        let arguments = ([bridge.wrappedName] + kotlinArguments(method) + ["arena"]).joined(separator: ", ")
+        let openArguments = ([bridge.wrappedName] + kotlinArguments(method) + ["arena"]).joined(separator: ", ")
 
         w.indented { w in
-            w.line("fun \(method.name)(\(parameterList(method))): Flow<\(element)> = flow {")
+            w.line("fun \(method.name)(\(parameterList(method))): Flow<\(element)> =")
             w.indented { w in
-                w.line("val observation = \(observationType).`init`(\(arguments))")
-                w.line("emitAll(")
+                w.line("observationFlow(")
                 w.indented { w in
-                    w.line("observationFlow(")
+                    w.line("open = { \(observationType).`init`(\(openArguments)) },")
+                    w.line("next = { observation ->")
                     w.indented { w in
-                        w.line("next = {")
+                        w.line("withContext(Dispatchers.IO) {")
                         w.indented { w in
-                            w.line("withContext(Dispatchers.IO) {")
+                            w.line("observation.next(arena)")
                             w.indented { w in
-                                w.line("observation.next(arena)")
-                                w.line("    .await()")
-                                w.line("    .orElse(null)")
+                                w.line(".await()")
+                                w.line(".orElse(null)")
                             }
-                            w.line("}")
                         }
-                        w.line("},")
-                        w.line("cancel = {")
-                        w.indented { w in
-                            w.line("withContext(Dispatchers.IO) {")
-                            w.indented { w in
-                                w.line("observation.cancel()")
-                                w.line("    .await()")
-                            }
-                            w.line("}")
-                        }
-                        w.line("},")
+                        w.line("}")
                     }
-                    w.line("),")
+                    w.line("},")
+                    w.line("cancel = { observation ->")
+                    w.indented { w in
+                        w.line("withContext(Dispatchers.IO) {")
+                        w.indented { w in
+                            w.line("observation.cancel()")
+                            w.indented { w in
+                                w.line(".await()")
+                            }
+                        }
+                        w.line("}")
+                    }
+                    w.line("},")
                 }
                 w.line(")")
             }
-            w.line("}")
         }
     }
 

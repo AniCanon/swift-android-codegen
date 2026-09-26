@@ -51,7 +51,7 @@ private final class BridgeVisitor: SyntaxVisitor {
     }
 
     override func visit(_ node: ProtocolDeclSyntax) -> SyntaxVisitorContinueKind {
-        if let bridge = extractBridge(from: node.attributes, name: node.name, members: node.memberBlock, requiresPublic: false) {
+        if let bridge = extractBridge(from: node.attributes, name: node.name, members: node.memberBlock, requiresPublic: false, isProtocol: true) {
             bridges.append(bridge)
         }
         return .skipChildren
@@ -61,11 +61,12 @@ private final class BridgeVisitor: SyntaxVisitor {
         from attributes: AttributeListSyntax,
         name: TokenSyntax,
         members: MemberBlockSyntax,
-        requiresPublic: Bool = true
+        requiresPublic: Bool = true,
+        isProtocol: Bool = false
     ) -> BridgeDescriptor? {
         guard let bridgeName = extractBridgeName(from: attributes) else { return nil }
 
-        let methods = extractMethods(from: members, requiresPublic: requiresPublic)
+        let methods = extractMethods(from: members, requiresPublic: requiresPublic, isProtocol: isProtocol, typeName: name.text)
         guard !methods.isEmpty else {
             print("warning: @AndroidBridge(\"\(bridgeName)\") on '\(name.text)' has no public async or stream methods — skipping")
             return nil
@@ -94,8 +95,14 @@ private final class BridgeVisitor: SyntaxVisitor {
         return nil
     }
 
-    private func extractMethods(from members: MemberBlockSyntax, requiresPublic: Bool) -> [BridgeDescriptor.Method] {
+    private func extractMethods(
+        from members: MemberBlockSyntax,
+        requiresPublic: Bool,
+        isProtocol: Bool,
+        typeName: String
+    ) -> [BridgeDescriptor.Method] {
         var methods: [BridgeDescriptor.Method] = []
+        var streamMethodNames: Set<String> = []
 
         for member in members.members {
             guard let funcDecl = member.decl.as(FunctionDeclSyntax.self) else { continue }
@@ -113,12 +120,27 @@ private final class BridgeVisitor: SyntaxVisitor {
                 continue
             }
 
+            guard isStreamReturning(funcDecl.signature.returnClause) else { continue }
+
+            guard isProtocol else {
+                print("warning: '\(methodName)' on '\(typeName)' streams values, which is only bridged on protocols — skipping")
+                continue
+            }
+
             guard effects?.throwsClause == nil,
                   let stream = extractStream(from: funcDecl.signature.returnClause)
-            else { continue }
+            else {
+                print("warning: '\(methodName)' on '\(typeName)' streams values in an unsupported shape — skipping")
+                continue
+            }
 
             guard stream.element.isBridgeableStreamElement else {
                 print("warning: '\(methodName)' streams '\(stream.element.swiftSpelling)', which cannot be bridged — skipping")
+                continue
+            }
+
+            guard streamMethodNames.insert(methodName).inserted else {
+                print("warning: '\(methodName)' on '\(typeName)' overloads an existing stream method — skipping")
                 continue
             }
 
@@ -131,6 +153,13 @@ private final class BridgeVisitor: SyntaxVisitor {
         }
 
         return methods
+    }
+
+    /// Whether `returnClause` names `AsyncStream`/`AsyncThrowingStream`, regardless of generic arity
+    /// or throwing shape — used to distinguish "not a stream at all" from "an unsupported stream shape".
+    private func isStreamReturning(_ returnClause: ReturnClauseSyntax?) -> Bool {
+        guard let identifier = returnClause?.type.as(IdentifierTypeSyntax.self) else { return false }
+        return identifier.name.text == "AsyncStream" || identifier.name.text == "AsyncThrowingStream"
     }
 
     private func extractMethodParams(from clause: FunctionParameterClauseSyntax) -> [BridgeDescriptor.Param] {
@@ -156,7 +185,7 @@ private final class BridgeVisitor: SyntaxVisitor {
             return (parseSwiftType(types[0]), false)
         case "AsyncThrowingStream" where types.count == 2:
             let failure = types[1].trimmedDescription
-            guard failure == "Error" || failure == "any Error" else { return nil }
+            guard failure == "Error" || failure == "any Error" || failure == "Swift.Error" else { return nil }
             return (parseSwiftType(types[0]), true)
         default:
             return nil

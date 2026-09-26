@@ -97,6 +97,49 @@ struct SwiftSourceAnalyzerStreamTests {
         #expect(bridges.isEmpty)
     }
 
+    @Test("Accepts Swift.Error as the throwing stream failure")
+    func swiftErrorFailure() throws {
+        let bridges = analyzer.analyzeSource("""
+        @AndroidBridge("ListBridge")
+        public protocol ListUseCase: Sendable {
+            func observe() -> AsyncThrowingStream<ListOverview, Swift.Error>
+        }
+        """)
+
+        #expect(bridges.first?.methods.first?.kind == .stream(throwing: true))
+    }
+
+    @Test("Streams are only bridged on protocols; a class or struct bridge keeps its async methods and skips streams")
+    func streamsSkippedOnStructBridge() throws {
+        let bridges = analyzer.analyzeSource("""
+        @AndroidBridge("HomeBridge")
+        public struct HomeUseCase: Sendable {
+            public func fetch(projectId: String) async -> HomeOverview { fatalError() }
+            public func observe(projectId: String) -> AsyncStream<HomeOverview> { fatalError() }
+        }
+        """)
+
+        let bridge = try #require(bridges.first)
+        #expect(bridge.methods.map(\.name) == ["fetch"])
+        #expect(bridge.methods[0].kind == .async)
+        #expect(!bridge.hasStreamMethods)
+    }
+
+    @Test("Keeps the first of two stream overloads and skips the rest")
+    func duplicateStreamMethodNamesKeepsFirst() throws {
+        let bridges = analyzer.analyzeSource("""
+        @AndroidBridge("HomeBridge")
+        public protocol HomeUseCase: Sendable {
+            func observe(projectId: String) -> AsyncStream<HomeOverview>
+            func observe(sceneId: String) -> AsyncStream<HomeOverview>
+        }
+        """)
+
+        let bridge = try #require(bridges.first)
+        #expect(bridge.methods.count == 1)
+        #expect(bridge.methods[0].params.map(\.name) == ["projectId"])
+    }
+
     @Test("Swift spelling round-trips the parsed shapes")
     func swiftSpelling() {
         #expect(SwiftType.simple("Item").swiftSpelling == "Item")

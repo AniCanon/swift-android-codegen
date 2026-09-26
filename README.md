@@ -177,7 +177,9 @@ val overview = bridge.fetch() // suspend fun, use from any coroutine scope
 
 ## Streams
 
-A non-async method returning `AsyncStream<T>` or `AsyncThrowingStream<T, Error>` becomes a cold Kotlin `Flow<T>`:
+Streams are bridged only on `@AndroidBridge` protocols — a class or struct bridge's stream methods are
+skipped with a warning; its async methods still bridge normally. A non-async protocol requirement
+returning `AsyncStream<T>` or `AsyncThrowingStream<T, Error>` becomes a cold Kotlin `Flow<T>`:
 
 ```swift
 @AndroidBridge("HomeUseCaseBridge")
@@ -190,9 +192,32 @@ public protocol HomeUseCase: Sendable {
 bridge.observe(projectId).collect { overview -> /* ... */ }
 ```
 
+generates:
+
+```kotlin
+fun observe(projectId: String): Flow<HomeOverview> =
+    observationFlow(
+        open = { HomeUseCaseObserveObservation.`init`(homeUseCase, projectId, arena) },
+        next = { observation ->
+            withContext(Dispatchers.IO) {
+                observation.next(arena)
+                    .await()
+                    .orElse(null)
+            }
+        },
+        cancel = { observation ->
+            withContext(Dispatchers.IO) {
+                observation.cancel()
+                    .await()
+            }
+        },
+    )
+```
+
 - `bridge-gen` writes `HomeUseCase+AndroidStreams.swift` (a `HomeUseCaseObserveObservation` class) into `swiftOutputDir`. Commit it, and add that directory to jextract's `swiftFilterInclude`. Run `generateSwiftAndroidBridges` before jextract.
 - The stream requirement needs no `#if` guard: jextract skips it with a warning and exports the generated class instead.
-- Collection starts the Swift stream; completion, `first()`/`take()` and collector cancellation all stop it, which runs its `onTermination`.
+- `T` must be `Sendable` — the generated `StreamObservation<T>` requires it, matching every other bridged type.
+- Collection opens the Swift stream when the `Flow` is collected, not when the bridge method is called; completion, `first()`/`take()` and collector cancellation all close it exactly once, which runs its `onTermination`.
 - A throwing stream's error fails the flow. `T` must be a named type jextract exports; `String`, primitives, arrays, optionals and `Data` are skipped with a warning.
 - Generated Swift is not wrapped in `#if`: jextract evaluates conditions statically and cannot see guarded code, so the classes compile on every platform that builds the shared package.
 
@@ -220,7 +245,7 @@ The `bridge-gen` CLI scans for types annotated with `@AndroidBridge` and extract
 - **The annotated type** — becomes the bridge's single constructor parameter.
 - **Async methods** — become `suspend fun` on the bridge: every async requirement of a protocol, and the `public` async methods of a class or struct. Synchronous methods are ignored.
 - **Return types** — mapped to Kotlin equivalents. Void methods omit the return type.
-- **Stream methods** — non-async methods returning `AsyncStream`/`AsyncThrowingStream` become `Flow`-returning functions.
+- **Stream methods** — non-async protocol requirements returning `AsyncStream`/`AsyncThrowingStream` become `Flow`-returning functions. Only bridged on protocols; a class or struct bridge skips them with a warning.
 
 Types without `@AndroidBridge` are ignored. The `@AndroidBridge` macro itself is a no-op peer macro — it produces no code at compile time and exists purely as a marker for the code generator.
 
