@@ -1,0 +1,72 @@
+import SwiftAndroidCodegen
+import Testing
+
+@Suite("StreamObservation")
+struct StreamObservationTests {
+    struct Boom: Error, Equatable {}
+
+    @Test("Delivers every element, then nil")
+    func deliversElementsThenNil() async throws {
+        let observation = StreamObservation(AsyncStream<Int> { continuation in
+            continuation.yield(1)
+            continuation.yield(2)
+            continuation.finish()
+        })
+
+        #expect(try await observation.next() == 1)
+        #expect(try await observation.next() == 2)
+        #expect(try await observation.next() == nil)
+        #expect(try await observation.next() == nil)
+    }
+
+    @Test("Rethrows the source error once, then returns nil")
+    func rethrowsSourceError() async throws {
+        let observation = StreamObservation(AsyncThrowingStream<Int, Error> { continuation in
+            continuation.yield(1)
+            continuation.finish(throwing: Boom())
+        })
+
+        #expect(try await observation.next() == 1)
+        await #expect(throws: Boom.self) { try await observation.next() }
+        #expect(try await observation.next() == nil)
+    }
+
+    @Test("Cancel ends a waiting next with nil")
+    func cancelEndsWaitingNext() async throws {
+        let (stream, continuation) = AsyncStream<Int>.makeStream()
+        let observation = StreamObservation(stream)
+
+        async let pending = observation.next()
+        await observation.cancel()
+
+        #expect(try await pending == nil)
+        withExtendedLifetime(continuation) {}
+    }
+
+    @Test("Cancel terminates the source")
+    func cancelTerminatesSource() async {
+        let (terminated, terminatedContinuation) = AsyncStream<Void>.makeStream()
+        let (stream, continuation) = AsyncStream<Int>.makeStream()
+        continuation.onTermination = { _ in
+            terminatedContinuation.yield()
+            terminatedContinuation.finish()
+        }
+        let observation = StreamObservation(stream)
+
+        await observation.cancel()
+
+        var iterator = terminated.makeAsyncIterator()
+        #expect(await iterator.next() != nil)
+    }
+
+    @Test("Next after cancel returns nil even when the source keeps yielding")
+    func nextAfterCancelReturnsNil() async throws {
+        let (stream, continuation) = AsyncStream<Int>.makeStream()
+        let observation = StreamObservation(stream)
+
+        await observation.cancel()
+        continuation.yield(7)
+
+        #expect(try await observation.next() == nil)
+    }
+}
