@@ -71,8 +71,9 @@ class OutfitGenerationProgressUseCaseBridge(...) {
 ## Generated Swift
 
 Per protocol `P` with stream methods, one committed file `<P>+AndroidStreams.swift` in the tool-owned
-`swiftOutputDir`, guarded by `#if canImport(SwiftJava)` (compiled by the Android and JVM test-support
-builds, invisible to iOS/Xcode and the macOS Shared tests). Per stream method `m`:
+`swiftOutputDir`, with no `#if` guard (jextract evaluates conditions statically and cannot evaluate
+`canImport`, so a guarded class would never be exported; the classes compile on every platform, which
+requires consumers to pin codegen 0.4.0). Per stream method `m`:
 
 ```swift
 public final class <P><M>Observation: Sendable {

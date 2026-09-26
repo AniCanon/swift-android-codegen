@@ -194,7 +194,7 @@ bridge.observe(projectId).collect { overview -> /* ... */ }
 - The stream requirement needs no `#if` guard: jextract skips it with a warning and exports the generated class instead.
 - Collection starts the Swift stream; completion, `first()`/`take()` and collector cancellation all stop it, which runs its `onTermination`.
 - A throwing stream's error fails the flow. `T` must be a named type jextract exports; `String`, primitives, arrays, optionals and `Data` are skipped with a warning.
-- Generated Swift is wrapped in `#if canImport(SwiftJava)`, so iOS builds never compile it.
+- Generated Swift is not wrapped in `#if`: jextract evaluates conditions statically and cannot see guarded code, so the classes compile on every platform that builds the shared package.
 
 ## Type mappings
 
