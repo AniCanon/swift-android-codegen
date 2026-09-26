@@ -1,5 +1,6 @@
 package dev.anicanon.swiftandroid.codegen.runtime
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
@@ -51,6 +52,7 @@ class ObservationFlowTest {
         assertEquals(1, source.cancels)
     }
 
+    @OptIn(ExperimentalCoroutinesApi::class)
     @Test
     fun collectorCancellationCancelsOnce() = runTest {
         var cancels = 0

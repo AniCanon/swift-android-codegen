@@ -161,9 +161,7 @@ public struct KotlinBridgeEmitter {
         w.indented { w in
             w.line("fun \(method.name)(\(parameterList(method))): Flow<\(element)> = flow {")
             w.indented { w in
-                w.line("val observation = withContext(Dispatchers.IO) {")
-                w.indented { w in w.line("\(observationType).`init`(\(arguments))") }
-                w.line("}")
+                w.line("val observation = \(observationType).`init`(\(arguments))")
                 w.line("emitAll(")
                 w.indented { w in
                     w.line("observationFlow(")

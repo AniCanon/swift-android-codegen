@@ -39,9 +39,7 @@ struct KotlinBridgeEmitterStreamTests {
         #expect(output.contains("import com.example.source.HomeOverview"))
         #expect(output.contains("""
             fun observe(projectId: String): Flow<HomeOverview> = flow {
-                val observation = withContext(Dispatchers.IO) {
-                    HomeUseCaseObserveObservation.`init`(homeUseCase, projectId, arena)
-                }
+                val observation = HomeUseCaseObserveObservation.`init`(homeUseCase, projectId, arena)
                 emitAll(
                     observationFlow(
                         next = {
